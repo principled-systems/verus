@@ -1900,6 +1900,11 @@ impl Verifier {
             .find(|m| &m.x.path == bucket_id.module())
             .expect("module in krate")
             .clone();
+        if self.args.log_all || self.args.log_args.log_vir_pruned {
+            let mut file =
+                self.create_log_file(Some(&bucket_id), crate::config::VIR_PRUNED_FILE_SUFFIX)?;
+            vir::printer::write_krate(&mut file, &pruned_krate, &self.args.log_args.vir_log_option);
+        }
         let mut ctx = vir::context::Ctx::new(
             &pruned_krate,
             global_ctx,

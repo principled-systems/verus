@@ -1423,6 +1423,12 @@ pub fn is_smaller_than_recursive_function_field<A, B>(_: A, _: B) -> bool {
     unimplemented!();
 }
 
+#[cfg(verus_keep_ghost)]
+#[rustc_diagnostic_item = "verus::builtin::resolve"]
+pub fn resolve<A>(_: A) {
+    unimplemented!();
+}
+
 #[macro_export]
 #[cfg(not(verus_verify_core))]
 macro_rules! decreases_to_internal {

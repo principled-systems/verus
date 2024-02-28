@@ -186,7 +186,8 @@ fn check_trigger_expr(
             ExpX::ArrayLiteral(_) => {
                 Err(error(&exp.span, "triggers cannot contain array literals"))
             }
-            ExpX::Loc(..) | ExpX::VarLoc(..) => Ok(()),
+            // TODO(&mut)
+            ExpX::Loc(..) | ExpX::VarLoc(..) | ExpX::DerefLoc(..) => Ok(()),
             ExpX::ExecFnByName(..) => Ok(()),
             ExpX::Call(_, typs, args) => {
                 for typ in typs.iter() {
