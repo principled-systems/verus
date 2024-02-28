@@ -103,6 +103,7 @@ pub(crate) enum ExpX {
     ExtraParens(Exp),
     Block(Vec<Stm>, Option<Exp>),
     Index(Typ, Typ, Typ, Exp, Exp),
+    Resolve(Id),
 }
 
 pub(crate) type Stm = Box<(Span, StmX)>;

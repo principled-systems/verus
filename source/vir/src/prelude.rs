@@ -126,6 +126,13 @@ pub(crate) fn prelude_nodes(config: PreludeConfig) -> Vec<Node> {
     let type_id_ptr = str_to_node(TYPE_ID_PTR);
     let type_id_global = str_to_node(TYPE_ID_GLOBAL);
 
+    let proph_int = str_to_node(prophecy_sort_name(PROPHECY_INT_SUFFIX).as_str());
+    let proph_int_future = str_to_node(
+        &prophecy_accessor_name(ProphecyAccessor::Future, PROPHECY_INT_SUFFIX).as_str(),
+    );
+    let proph_int_value =
+        str_to_node(&prophecy_accessor_name(ProphecyAccessor::Value, PROPHECY_INT_SUFFIX).as_str());
+
     let mut prelude = nodes_vec!(
         // Fuel
         (declare-sort [FuelId] 0)
@@ -271,6 +278,12 @@ pub(crate) fn prelude_nodes(config: PreludeConfig) -> Vec<Node> {
             :qid prelude_box_unbox_sint
             :skolemid skolem_prelude_box_unbox_sint
         )))
+
+        // Prophecy
+        (declare-sort [proph_int] 0)
+        (declare-fun [proph_int_future] ([proph_int]) Int)
+        (declare-fun [proph_int_value] ([proph_int]) Int)
+
         (axiom (forall ((x [Poly])) (!
             (=>
                 ([has_type] x [type_id_char])
@@ -289,6 +302,8 @@ pub(crate) fn prelude_nodes(config: PreludeConfig) -> Vec<Node> {
             :qid prelude_ext_eq
             :skolemid skolem_prelude_ext_eq
         )))
+
+        // TODO(&mut) (declare-sort [])
 
         // Integers
         // TODO: make this more configurable via options or HeaderExpr directives

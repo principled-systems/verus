@@ -200,6 +200,10 @@ pub(crate) trait Visitor<R: Returner, Err, Scope: Scoper> {
                 let e1 = self.visit_exp(e1)?;
                 R::ret(|| exp_new(ExpX::Loc(R::get(e1))))
             }
+            ExpX::DerefLoc(e1) => {
+                let e1 = self.visit_exp(e1)?;
+                R::ret(|| exp_new(ExpX::DerefLoc(R::get(e1))))
+            }
             ExpX::Old(..) => R::ret(|| exp.clone()),
             ExpX::Call(fun, ts, es) => {
                 use crate::sst::CallFun;
@@ -509,6 +513,7 @@ pub(crate) trait Visitor<R: Returner, Err, Scope: Scoper> {
                 })
             }
             StmX::Air(_) => R::ret(|| stm.clone()),
+            StmX::Resolve(_) => R::ret(|| stm.clone()),
         }
     }
 

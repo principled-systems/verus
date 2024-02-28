@@ -632,16 +632,12 @@ pub(crate) fn is_integer_ty<'tcx>(
     }
 }
 
-pub(crate) fn mid_ty_simplify<'tcx>(
+pub(crate) fn mid_ty_simplify_adt<'tcx>(
     tcx: TyCtxt<'tcx>,
     verus_items: &crate::verus_items::VerusItems,
     ty: &rustc_middle::ty::Ty<'tcx>,
-    allow_mut_ref: bool,
 ) -> rustc_middle::ty::Ty<'tcx> {
     match ty.kind() {
-        TyKind::Ref(_, t, Mutability::Mut) if allow_mut_ref => {
-            mid_ty_simplify(tcx, verus_items, t, allow_mut_ref)
-        }
         TyKind::Adt(AdtDef(adt_def_data), args) => {
             let did = adt_def_data.did;
             let is_ghost_or_tracked = matches!(
@@ -656,7 +652,7 @@ pub(crate) fn mid_ty_simplify<'tcx>(
                     && args.len() == 1;
             if is_box || is_smart_ptr {
                 if let rustc_middle::ty::GenericArgKind::Type(t) = args[0].unpack() {
-                    mid_ty_simplify(tcx, verus_items, &t, false)
+                    mid_ty_simplify_adt(tcx, verus_items, &t)
                 } else {
                     panic!("unexpected type argument")
                 }
@@ -846,7 +842,7 @@ pub(crate) fn mid_ty_to_vir_ghost<'tcx>(
             let (t0, ghost) = t_rec(tys)?;
             (Arc::new(TypX::Decorate(TypDecoration::Ref, None, t0.clone())), ghost)
         }
-        TyKind::Ref(_, tys, rustc_ast::Mutability::Mut) if allow_mut_ref => {
+        TyKind::Ref(_, tys, rustc_ast::Mutability::Mut) => {
             let (t0, ghost) = t_rec(tys)?;
             (Arc::new(TypX::Decorate(TypDecoration::MutRef, None, t0.clone())), ghost)
         }
@@ -1104,9 +1100,7 @@ pub(crate) fn mid_ty_to_vir_ghost<'tcx>(
         }
         TyKind::Float(..) => unsupported_err!(span, "floating point types"),
         TyKind::Foreign(..) => unsupported_err!(span, "foreign types"),
-        TyKind::Ref(_, _, rustc_ast::Mutability::Mut) => {
-            unsupported_err!(span, "&mut types, except in special cases")
-        }
+        TyKind::FnDef(..) => unsupported_err!(span, "anonymous function types"),
         TyKind::FnPtr(..) => unsupported_err!(span, "function pointer types"),
         TyKind::Dynamic(..) => unsupported_err!(span, "dynamic types"),
         TyKind::Coroutine(..) => unsupported_err!(span, "generator types"),
@@ -1225,18 +1219,18 @@ pub(crate) fn typ_of_node<'tcx>(
     )
 }
 
-pub(crate) fn typ_of_node_expect_mut_ref<'tcx>(
-    bctx: &BodyCtxt<'tcx>,
-    span: Span,
-    id: &HirId,
-) -> Result<Typ, VirErr> {
-    let ty = bctx.types.node_type(*id);
-    if let TyKind::Ref(_, _tys, rustc_ast::Mutability::Mut) = ty.kind() {
-        mid_ty_to_vir(bctx.ctxt.tcx, &bctx.ctxt.verus_items, bctx.fun_id, span, &ty, true)
-    } else {
-        err_span(span, "a mutable reference is expected here")
-    }
-}
+// pub(crate) fn typ_of_node_expect_mut_ref<'tcx>(
+//     bctx: &BodyCtxt<'tcx>,
+//     span: Span,
+//     id: &HirId,
+// ) -> Result<Typ, VirErr> {
+//     let ty = bctx.types.node_type(*id);
+//     if let TyKind::Ref(_, _tys, rustc_ast::Mutability::Mut) = ty.kind() {
+//         mid_ty_to_vir(bctx.ctxt.tcx, &bctx.ctxt.verus_items, bctx.fun_id, span, &ty, true)
+//     } else {
+//         err_span(span, "a mutable reference is expected here")
+//     }
+// }
 
 pub(crate) fn implements_structural<'tcx>(
     ctxt: &Context<'tcx>,

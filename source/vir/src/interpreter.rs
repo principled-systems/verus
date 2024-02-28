@@ -499,6 +499,7 @@ fn hash_exp<H: Hasher>(state: &mut H, exp: &Exp) {
         VarLoc(id) => dohash!(2, id),
         VarAt(id, va) => dohash!(3, id, va),
         Loc(e) => dohash!(4; hash_exp(e)),
+        DerefLoc(e) => todo!("&mut"),
         Old(id, uid) => dohash!(5, id, uid),
         Call(fun, typs, exps) => dohash!(6, fun, typs; hash_exps(exps)),
         CallLambda(lambda, args) => {
@@ -1717,7 +1718,9 @@ fn eval_expr_internal(ctx: &Ctx, state: &mut State, exp: &Exp) -> Result<Exp, Vi
             InterpExp::Array(_) => ok,
         },
         // Ignored by the interpreter at present (i.e., treated as symbolic)
-        VarAt(..) | VarLoc(..) | Loc(..) | Old(..) | WithTriggers(..) | StaticVar(..) => ok,
+        // TODO(&mut) ???
+        VarAt(..) | VarLoc(..) | Loc(..) | DerefLoc(..) | Old(..) | WithTriggers(..)
+        | StaticVar(..) => ok,
         ExecFnByName(_) => ok,
         FuelConst(_) => ok,
     };

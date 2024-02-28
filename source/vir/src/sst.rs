@@ -51,6 +51,8 @@ pub enum InternalFun {
     ClosureEns,
     CheckDecreaseInt,
     CheckDecreaseHeight,
+    ProphecyValue,
+    ProphecyFuture,
 }
 
 #[derive(Debug, Clone, Hash)]
@@ -71,6 +73,7 @@ pub enum ExpX {
     VarLoc(UniqueIdent),
     VarAt(UniqueIdent, VarAt),
     Loc(Exp),
+    DerefLoc(Exp),
     // used only during sst_to_air to generate AIR Old
     Old(Ident, UniqueIdent),
     // call to spec function
@@ -202,6 +205,7 @@ pub enum StmX {
         typ_inv_vars: Arc<Vec<(UniqueIdent, Typ)>>,
     },
     Air(Arc<String>),
+    Resolve(UniqueIdent),
     Block(Stms),
 }
 

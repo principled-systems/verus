@@ -1107,5 +1107,7 @@ pub fn prune_krate_for_module_or_krate(
         }
         _ => None,
     };
+    let State { reached_bound_traits, reached_types, .. } = state;
+    dbg!(&mono_abstract_datatypes, &reached_types);
     (Arc::new(kratex), mono_abstract_datatypes, spec_fn_types, state.uses_array, fndef_types)
 }

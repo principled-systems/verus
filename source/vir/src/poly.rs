@@ -76,9 +76,11 @@ because x is used both for f and for +.
 */
 
 use crate::ast::{
-    AssocTypeImpl, BinaryOp, Datatype, DatatypeX, Dt, FieldOpr, FunctionKind, IntRange, Mode,
-    NullaryOpr, Primitive, SpannedTyped, Typ, TypDecorationArg, TypX, Typs, UnaryOp, UnaryOpr,
-    VarBinder, VarBinderX, VarBinders, VarIdent, Variant,
+    AssocTypeImpl, BinaryOp, CallTarget, Datatype, DatatypeX, Dt, Expr, ExprX, Exprs, FieldOpr,
+    Function, FunctionKind, FunctionX, IntRange, Krate, KrateX, MaskSpec, Mode, MultiOp,
+    NullaryOpr, Param, ParamX, Path, PatternX, Primitive, SpannedTyped, Stmt, StmtX, Typ,
+    TypDecorationArg, TypX, Typs, UnaryOp, UnaryOpr, VarBinder, VarBinderX, VarBinders, VarIdent,
+    Variant,
 };
 use crate::context::Ctx;
 use crate::def::Spanned;
@@ -258,6 +260,18 @@ pub(crate) fn coerce_typ_to_poly(_ctx: &Ctx, typ: &Typ) -> Typ {
         TypX::Air(_) => panic!("internal error: Air type created too soon"),
     }
 }
+
+// TODO(&mut) pub fn undecorate_typ_keep_mut_ref(typ: &Typ) -> Typ {
+// TODO(&mut)     if let TypX::Decorate(d, t) = &**typ {
+// TODO(&mut)         if let TypDecoration::MutRef = d {
+// TODO(&mut)             Arc::new(TypX::Decorate(TypDecoration::MutRef, undecorate_typ_keep_mut_ref(t)))
+// TODO(&mut)         } else {
+// TODO(&mut)             undecorate_typ_keep_mut_ref(t)
+// TODO(&mut)         }
+// TODO(&mut)     } else {
+// TODO(&mut)         typ.clone()
+// TODO(&mut)     }
+// TODO(&mut) }
 
 pub(crate) fn coerce_exp_to_native(ctx: &Ctx, exp: &Exp) -> Exp {
     match &*crate::ast_util::undecorate_typ(&exp.typ) {
@@ -460,6 +474,17 @@ fn visit_exp(ctx: &Ctx, state: &mut State, exp: &Exp) -> Exp {
                 let e1 = visit_exp_poly(ctx, state, &exps[1]);
                 let e2 = visit_exp_native(ctx, state, &exps[2]);
                 mk_exp(ExpX::Call(call_fun.clone(), typs.clone(), Arc::new(vec![e0, e1, e2])))
+            }
+            CallFun::InternalFun(InternalFun::ProphecyValue) => {
+                // TODO(&mut) this may be unnecessary
+                assert!(exps.len() == 1);
+                let e0 = visit_exp_poly(ctx, state, &exps[0]);
+                mk_exp(ExpX::Call(call_fun.clone(), typs.clone(), Arc::new(vec![e0])))
+            }
+            CallFun::InternalFun(InternalFun::ProphecyFuture) => {
+                assert!(exps.len() == 1);
+                let e0 = visit_exp_poly(ctx, state, &exps[0]);
+                mk_exp(ExpX::Call(call_fun.clone(), typs.clone(), Arc::new(vec![e0])))
             }
         },
         ExpX::CallLambda(callee, args) => {
@@ -675,6 +700,12 @@ fn visit_exp(ctx: &Ctx, state: &mut State, exp: &Exp) -> Exp {
         }
         ExpX::Interp(_) => panic!("unexpected ExpX::Interp"),
         ExpX::FuelConst(_) => exp.clone(),
+        ExpX::DerefLoc(e) => {
+            // TODO(&mut)
+            let expr1 = visit_exp(ctx, state, e);
+            let typ = expr1.typ.clone();
+            mk_exp_typ(&typ, ExpX::DerefLoc(expr1))
+        }
     }
 }
 
@@ -886,6 +917,7 @@ fn visit_stm(ctx: &Ctx, state: &mut State, stm: &Stm) -> Stm {
         }
         StmX::Air(_) => stm.clone(),
         StmX::Block(stms) => mk_stm(StmX::Block(visit_stms(ctx, state, stms))),
+        StmX::Resolve(var_ident) => mk_stm(StmX::Resolve(var_ident.clone())),
     }
 }
 
