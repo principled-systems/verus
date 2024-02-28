@@ -760,6 +760,8 @@ pub enum ExprX {
     StaticVar(Fun),
     /// Mutable reference (location)
     Loc(Expr),
+    /// De-reference a mutable reference (location)
+    DerefLoc(Expr),
     /// Call to a function passing some expression arguments
     Call(CallTarget, Exprs),
     /// Construct datatype value of type Path and variant Ident,
@@ -855,6 +857,8 @@ pub enum ExprX {
     Block(Stmts, Option<Expr>),
     /// Inline AIR statement
     AirStmt(Arc<String>),
+    /// Resolve a &mut in a variable
+    Resolve(VarIdent),
 }
 
 /// Statement, similar to rustc_hir::Stmt

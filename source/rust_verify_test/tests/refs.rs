@@ -522,7 +522,7 @@ test_verify_one_file! {
             let mut y: u8 = 0;
             stuff(&mut &y); // this does NOT modify y
         }
-    } => Err(err) => assert_vir_error_msg(err, "complex arguments to &mut parameters are currently unsupported")
+    } => Err(err) => assert_vir_error_msg(err, "can only resolve a mutable reference")
 }
 
 test_verify_one_file! {

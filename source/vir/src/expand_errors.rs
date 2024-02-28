@@ -102,7 +102,8 @@ fn get_fuel_at_id(stm: &Stm, a_id: &AssertId, fuels: &mut HashMap<Fun, u32>) -> 
         | StmX::Assign { .. }
         | StmX::RevealString { .. }
         | StmX::Air { .. }
-        | StmX::BreakOrContinue { .. } => false,
+        | StmX::BreakOrContinue { .. }
+        | StmX::Resolve(_) => false,
         StmX::Fuel(fun, fuel) => {
             fuels.insert(fun.clone(), *fuel);
             return false;
