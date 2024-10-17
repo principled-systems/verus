@@ -766,7 +766,7 @@
   ;  (and
   ;   (= (u!A./A/u (old snap%ASSIGN a@)) (u!A./A/u a@))
   ; ))
-  (assign a@ ((_ update-field u!A./A/?v) a@0 3))
+  (assign a@ ((_ update-field u!A./A/?v) a@ 3))
   (assume
    (= tmp%1 (and
      (= (u!A./A/v (%Poly%u!A. (Poly%u!A. a@))) 3)
