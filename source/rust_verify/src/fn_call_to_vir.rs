@@ -3,8 +3,7 @@ use crate::context::BodyCtxt;
 use crate::erase::{CompilableOperator, ResolvedCall};
 use crate::reveal_hide::RevealHideResult;
 use crate::rust_to_vir_base::{
-    bitwidth_and_signedness_of_integer_type, def_id_to_vir_path, is_smt_arith,
-    is_type_std_rc_or_arc_or_ref, mid_ty_to_vir, remove_host_arg, typ_of_node,
+    bitwidth_and_signedness_of_integer_type, def_id_to_vir_path, is_smt_arith, is_type_std_rc_or_arc_or_ref, local_to_var, mid_ty_to_vir, remove_host_arg, typ_of_node
 };
 use crate::rust_to_vir_expr::{
     check_lit_int, closure_param_typs, closure_to_vir, expr_to_vir, extract_array, extract_tuple,
@@ -563,16 +562,13 @@ where
                 let Res::Local(id) = res else {
                     return err_span(args[0].span, "expected local variable for resolve");
                 };
-                // TODO(&mut) let node = tcx.hir().get(id);
-                // TODO(&mut) let Node::Pat(pat) = node else {
-                // TODO(&mut)     return err_span(args[0].span, "expected local variable for resolve");
-                // TODO(&mut) };
+                let ident = tcx.hir().ident(id);
                 let typ_ = bctx.types.node_type(id);
                 let rustc_type_ir::TyKind::Ref(_, _, rustc_ast::Mutability::Mut) = typ_.kind()
                 else {
                     return err_span(args[0].span, "can only resolve a mutable reference");
                 };
-                mk_expr(ExprX::Resolve(pat_to_var(todo!())?))
+                mk_expr(ExprX::Resolve(local_to_var(&ident, id.local_id)))
             }
         },
         VerusItem::Expr(expr_item) => match expr_item {
