@@ -605,8 +605,10 @@
 (declare-fun Proph%value%A. (Proph%A.) A.)
 (declare-fun Proph%future%A. (Proph%A.) A.)
 
-;; Function-Def crate::user_function
-;; test-ref-mut.rs:47:1: 47:19 (#0)
+; (declare-datatypes ((A. 0)) (((A./A (A./A/?v Int)))))
+; struct A {
+;     v: i32,
+; }
 (check-valid
  (declare-const no%param Int)
  (declare-const tmp%1 Bool)
@@ -614,28 +616,28 @@
  (declare-var a_ref@ Proph%A.)
  (axiom fuel_defaults)
  (block
+  ; let a = A { v: 20 }
   (assume
    (= a@ (A./A (%I (I 20))))
   )
 
+  ; let a_ref = &mut a;
   (assume (= (Proph%value%A. a_ref@) a@))
   (havoc a@)
   (assume (= a@ (Proph%future%A. a_ref@)))
 
+  ; *a_ref.v = 30;
   (block
    (snapshot snap%ASSIGN)
    (havoc a_ref@)
-   (assume (and
-      (= (Proph%future%A. (old snap%ASSIGN a_ref@)) (Proph%future%A. a_ref@))
-   ))
-  )
-  (assume
-   (= (A./A/v (%Poly%A. (Poly%A. (Proph%value%A. a_ref@)))) 30)
+   (assume (= (A./A/v (%Poly%A. (Poly%A. (Proph%value%A. a_ref@)))) 30))
+   (assume (= (Proph%future%A. (old snap%ASSIGN a_ref@)) (Proph%future%A. a_ref@)))
   )
 
-  ; resolve
+  ; finalize_mut_ref(a_ref)
   (assume (= (Proph%value%A. a_ref@) (Proph%future%A. a_ref@)))
 
+  ; assert(a.v == 30);
   (assume
    (= tmp%1 (= (A./A/v (%Poly%A. (Poly%A. a@))) 30))
   )
@@ -644,6 +646,44 @@
    ()
    tmp%1
   )
+))
+
+(check-valid
+ (declare-const no%param Int)
+ (declare-const tmp%1 Bool)
+ (declare-var a@ A.)
+ (declare-var v_ref@ Proph%I)
+ (axiom fuel_defaults)
+ (block
+  ; let a = A { v: 20 }
   (assume
+   (= a@ (A./A (%I (I 20))))
+  )
+
+  ; let v_ref = &mut a.v;
+  (assume (= (Proph%value%I v_ref@) (A./A/v a@)))
+  (assign a@ ((_ update-field A./A/?v) a@ (Proph%future%I v_ref@)))
+  ; (havoc a@)
+  ; (assume (= a@ (Proph%future%A. a_ref@)))
+
+  ; *v = 30;
+  (block
+   (snapshot snap%ASSIGN)
+   (havoc v_ref@)
+   (assume (= (Proph%value%I v_ref@) 30))
+   (assume (= (Proph%future%I (old snap%ASSIGN v_ref@)) (Proph%future%I v_ref@)))
+  )
+
+  ; finalize_mut_ref(a_ref)
+  (assume (= (Proph%value%I v_ref@) (Proph%future%I v_ref@)))
+
+  ; assert(a.v == 30);
+  (assume
+   (= tmp%1 (= (A./A/v (%Poly%A. (Poly%A. a@))) 30))
+  )
+  (assert
+   ("assertion failed" "assertion failed")
+   ()
    tmp%1
-)))
+  )
+  ))
