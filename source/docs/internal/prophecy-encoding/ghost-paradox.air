@@ -522,53 +522,10 @@
 (axiom true)
 
 ;; Datatypes
-(declare-datatypes ((A. 0) (tuple%0. 0)) (((A./A (A./A/?v Int))) ((tuple%0./tuple%0))))
-(declare-fun A./A/v (A.) Int)
-(declare-const TYPE%A. Type)
+(declare-datatypes ((tuple%0. 0)) (((tuple%0./tuple%0))))
 (declare-const TYPE%tuple%0. Type)
-(declare-fun Poly%A. (A.) Poly)
-(declare-fun %Poly%A. (Poly) A.)
 (declare-fun Poly%tuple%0. (tuple%0.) Poly)
 (declare-fun %Poly%tuple%0. (Poly) tuple%0.)
-(axiom (forall ((x A.)) (!
-   (= x (%Poly%A. (Poly%A. x)))
-   :pattern ((Poly%A. x))
-   :qid internal_crate__A_box_axiom_definition
-   :skolemid skolem_internal_crate__A_box_axiom_definition
-)))
-(axiom (forall ((x Poly)) (!
-   (=>
-    (has_type x TYPE%A.)
-    (= x (Poly%A. (%Poly%A. x)))
-   )
-   :pattern ((has_type x TYPE%A.))
-   :qid internal_crate__A_unbox_axiom_definition
-   :skolemid skolem_internal_crate__A_unbox_axiom_definition
-)))
-(axiom (forall ((_v! Int)) (!
-   (=>
-    (uInv 64 _v!)
-    (has_type (Poly%A. (A./A _v!)) TYPE%A.)
-   )
-   :pattern ((has_type (Poly%A. (A./A _v!)) TYPE%A.))
-   :qid internal_A./A_constructor_definition
-   :skolemid skolem_internal_A./A_constructor_definition
-)))
-(axiom (forall ((x A.)) (!
-   (= (A./A/v x) (A./A/?v x))
-   :pattern ((A./A/v x))
-   :qid internal_A./A/v_accessor_definition
-   :skolemid skolem_internal_A./A/v_accessor_definition
-)))
-(axiom (forall ((x Poly)) (!
-   (=>
-    (has_type x TYPE%A.)
-    (uInv 64 (A./A/v (%Poly%A. x)))
-   )
-   :pattern ((A./A/v (%Poly%A. x)) (has_type x TYPE%A.))
-   :qid internal_A./A/v_invariant_definition
-   :skolemid skolem_internal_A./A/v_invariant_definition
-)))
 (axiom (forall ((x tuple%0.)) (!
    (= x (%Poly%tuple%0. (Poly%tuple%0. x)))
    :pattern ((Poly%tuple%0. x))
@@ -594,56 +551,39 @@
 (declare-sort Proph%I 0)
 (declare-fun Proph%value%I (Proph%I) Int)
 (declare-fun Proph%future%I (Proph%I) Int)
-(declare-sort Proph%B 0)
-(declare-fun Proph%value%B (Proph%B) Bool)
-(declare-fun Proph%future%B (Proph%B) Bool)
 (declare-sort Proph%F 0)
 (declare-fun Proph%value%F (Proph%F) fndef)
 (declare-fun Proph%future%F (Proph%F) fndef)
 
-(declare-sort Proph%A. 0)
-(declare-fun Proph%value%A. (Proph%A.) A.)
-(declare-fun Proph%future%A. (Proph%A.) A.)
+(declare-sort Proph%B 0)
+(declare-fun Proph%value%B (Proph%B) Bool)
+(declare-fun Proph%future%B (Proph%B) Bool)
 
-;; Function-Def crate::user_function
-;; test-ref-mut.rs:47:1: 47:19 (#0)
 (check-valid
- (declare-const no%param Int)
  (declare-const tmp%1 Bool)
- (declare-var a@ A.)
- (declare-var a_ref@ Proph%A.)
+ (declare-var a@ Bool)
+ (declare-var a_ref@ Proph%B)
  (axiom fuel_defaults)
  (block
-  (assume
-   (= a@ (A./A (%I (I 20))))
-  )
+  ; let mut a: Ghost<bool> = Ghost(true);
+  (assume (= a@ true))
 
-  (assume (= (Proph%value%A. a_ref@) a@))
+  ; let mut a_ref: &mut Ghost<nat> = &mut a;
+  (assume (= (Proph%value%B a_ref@) a@))
   (havoc a@)
-  (assume (= a@ (Proph%future%A. a_ref@)))
+  (assume (= a@ (Proph%future%B a_ref@)))
 
+  ; *a_ref = Ghost(!a@);
   (block
    (snapshot snap%ASSIGN)
    (havoc a_ref@)
    (assume (and
-      (= (Proph%future%A. (old snap%ASSIGN a_ref@)) (Proph%future%A. a_ref@))
+      (= (Proph%future%B (old snap%ASSIGN a_ref@)) (Proph%future%B a_ref@))
+      (= (Proph%value%B a_ref@) (not a@))
    ))
   )
-  (assume
-   (= (A./A/v (%Poly%A. (Poly%A. (Proph%value%A. a_ref@)))) 30)
-  )
 
-  ; resolve
-  (assume (= (Proph%value%A. a_ref@) (Proph%future%A. a_ref@)))
-
-  (assume
-   (= tmp%1 (= (A./A/v (%Poly%A. (Poly%A. a@))) 30))
-  )
-  (assert
-   ("assertion failed" "assertion failed")
-   ()
-   tmp%1
-  )
-  (assume
-   tmp%1
-)))
+  ; finalize_mut_ref(a_ref) aka resolve(a_ref)
+  (assume (= (Proph%value%B a_ref@) (Proph%future%B a_ref@)))
+  (assert false)
+))
