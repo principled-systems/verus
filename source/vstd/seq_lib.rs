@@ -1666,7 +1666,8 @@ pub proof fn lemma_sorted_unique<A>(x: Seq<A>, y: Seq<A>, leq: spec_fn(A, A) -> 
 // This verified lemma used to be an axiom in the Dafny prelude
 pub broadcast proof fn lemma_seq_contains<A>(s: Seq<A>, x: A)
     ensures
-        // TODO: I don't understand why annotating the triggers like this works
+// TODO: I don't understand why annotating the triggers like this works
+
         #[trigger s[i], x]
         s.contains(x) <==> exists|i: int| 0 <= i < s.len() && s[i] == x,
 {
@@ -1676,7 +1677,7 @@ pub broadcast proof fn lemma_seq_contains<A>(s: Seq<A>, x: A)
 /// The empty sequence contains nothing
 pub broadcast proof fn lemma_seq_empty_contains_nothing<A>(x: A)
     ensures
-        ! (#[trigger] Seq::<A>::empty().contains(x)),
+        !(#[trigger] Seq::<A>::empty().contains(x)),
 {
 }
 
@@ -1719,7 +1720,9 @@ pub broadcast proof fn lemma_seq_concat_contains_all_elements<A>(x: Seq<A>, y: S
 /// After pushing an element onto a sequence, the sequence contains that element
 pub broadcast proof fn lemma_seq_contains_after_push<A>(s: Seq<A>, v: A, x: A)
     ensures
-        (#[trigger] s.push(v).contains(x) <==> v == x || s.contains(x)) && #[trigger] s.push(v).contains(v),
+        (#[trigger] s.push(v).contains(x) <==> v == x || s.contains(x)) && #[trigger] s.push(
+            v,
+        ).contains(v),
 {
     assert forall|elt: A| #[trigger] s.contains(elt) implies #[trigger] s.push(v).contains(elt) by {
         let index = choose|i: int| 0 <= i < s.len() && s[i] == elt;
@@ -1810,7 +1813,8 @@ pub broadcast proof fn lemma_seq_take_contains<A>(s: Seq<A>, n: int, x: A)
     requires
         0 <= n <= s.len(),
     ensures
-        #[trigger] s.take(n).contains(x) <==> (exists|i: int| 0 <= i < n <= s.len() && #[trigger] s[i] == x),
+        #[trigger] s.take(n).contains(x) <==> (exists|i: int|
+            0 <= i < n <= s.len() && #[trigger] s[i] == x),
 {
     assert((exists|i: int| 0 <= i < n <= s.len() && #[trigger] s[i] == x) ==> s.take(n).contains(x))
         by {
@@ -1864,7 +1868,8 @@ pub broadcast proof fn lemma_seq_skip_contains<A>(s: Seq<A>, n: int, x: A)
     requires
         0 <= n <= s.len(),
     ensures
-        #[trigger] s.skip(n).contains(x) <==> (exists|i: int| 0 <= n <= i < s.len() && #[trigger] s[i] == x),
+        #[trigger] s.skip(n).contains(x) <==> (exists|i: int|
+            0 <= n <= i < s.len() && #[trigger] s[i] == x),
 {
     assert((exists|i: int| 0 <= n <= i < s.len() && #[trigger] s[i] == x) ==> s.skip(n).contains(x))
         by {
@@ -1945,7 +1950,6 @@ pub broadcast proof fn lemma_seq_skip_update_commut1<A>(s: Seq<A>, i: int, v: A,
 /// the first `n` elements without the update.
 pub broadcast proof fn lemma_seq_skip_update_commut2<A>(s: Seq<A>, i: int, v: A, n: int)
     ensures
-
         0 <= i < n <= s.len() ==> #[trigger] s.update(i, v).skip(n) =~= s.skip(n),
 {
 }
@@ -2045,6 +2049,7 @@ pub proof fn lemma_seq_properties<A>()
                 > 0,  //from to_multiset_ensures
 {
     broadcast use group_lemma_seq_properties;
+
     assert forall|s: Seq<A>, v: A, x: A| v == x || s.contains(x) implies #[trigger] s.push(
         v,
     ).contains(x) by {
@@ -2190,7 +2195,6 @@ pub broadcast group group_lemma_seq_properties {
     lemma_seq_skip_of_skip,
     Seq::to_multiset_ensures,
 }
-
 
 #[doc(hidden)]
 pub use assert_seqs_equal_internal;
