@@ -1,5 +1,6 @@
 use vstd::multiset::*;
 use vstd::prelude::*;
+use vstd::seq_lib::group_lemma_seq_properties;
 
 verus! {
 
@@ -183,7 +184,9 @@ fn main() {
     let ghost expected_res: Seq<u64> = seq![1, 3, 4, 5, 9, 10]; // only creates triggers for len() and index by axiom_seq_new_index
 
     proof {
-        vstd::seq_lib::lemma_seq_properties::<u64>();
+        // TODO: broadcast use does't give me the automation I want
+        broadcast use group_lemma_seq_properties; 
+        // vstd::seq_lib::lemma_seq_properties::<u64>();
         // triggers, see examples in multiset.rs
         assert(v@ =~= seq![9].push(10).push(4).push(5).push(1).push(3));
         assert(expected_res =~= seq![1].push(3).push(4).push(5).push(9).push(10));
