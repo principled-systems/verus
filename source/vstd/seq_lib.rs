@@ -1352,6 +1352,34 @@ pub proof fn lemma_min_of_concat(x: Seq<int>, y: Seq<int>)
 
 /************************* Sequence to Multiset Conversion **************************/
 
+pub broadcast proof fn to_multiset_build_index<A>(s: Seq<A>, i: int)
+    requires
+        0 <= i < s.len(),
+    ensures
+        // #![trigger s.subrange(0, i).to_multiset()]
+        // #![trigger s.to_multiset().insert(a)]
+        s.subrange(0, i).to_multiset().insert(#[trigger] s[i]) == s.subrange(0, i + 1).to_multiset(),
+    decreases i
+{
+    broadcast use super::multiset::group_multiset_axioms;
+    broadcast use crate::seq_lib::to_multiset_build;
+
+    if i == 0 {
+        assert(s.subrange(0, i).to_multiset() =~= Multiset::<A>::empty());
+        assert(s.subrange(0, i).push(s[i]) == s.subrange(0, i + 1));
+        // assert(s.push(a).drop_first() =~= Seq::<A>::empty());
+        // assert(s.push(a).to_multiset() =~= Multiset::<A>::empty().insert(a).add(
+        //     Seq::<A>::empty().to_multiset(),
+        // ));
+        assert(s.subrange(0, i).to_multiset().insert(#[trigger] s[i]) ==
+            s.subrange(0, i + 1).to_multiset());
+    } else {
+        to_multiset_build_index(s, i - 1);
+        assert(s.subrange(0, i - 1).push(s[i - 1]).to_multiset() =~= s.subrange(0, i).to_multiset().insert(s[i - 1]));
+        // assert(s.push(s[i]).drop_first() =~= s.drop_first().push(a));
+    }
+}
+
 /// push(a) o to_multiset = to_multiset o insert(a)
 pub broadcast proof fn to_multiset_build<A>(s: Seq<A>, a: A)
     ensures

@@ -176,8 +176,17 @@ fn main() {
     let v_sorted = merge_sort(&v);
     let ghost expected_res: Seq<u64> = seq![1, 3, 4, 5, 9, 10];
     proof {
-        broadcast use group_lemma_seq_properties; 
-        assert(v@ =~= seq![9].push(10).push(4).push(5).push(1).push(3));
+        broadcast use vstd::seq_lib::to_multiset_build_index; 
+        // assert(v@ =~= seq![9].push(10).push(4).push(5).push(1).push(3));
+        assert(v@ =~= seq![9, 10, 4, 5, 1, 3]);
+        // assert(forall|i: nat| i < v@.len() ==> v@.subrange(0, i as int).push(v[i as int])[i as int] == v[i as int]);
+        // assert(v@[0] == 9);
+        // assert(v@[1] == 10);
+        // assert(v@[2] == 4);
+        // assert(v@[3] == 5);
+        // assert(v@[4] == 1);
+        // assert(v@[5] == 3);
+
         assert(expected_res =~= seq![1].push(3).push(4).push(5).push(9).push(10));
 
         assert(expected_res.to_multiset() =~= v@.to_multiset());
