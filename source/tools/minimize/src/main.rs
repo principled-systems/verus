@@ -1712,6 +1712,8 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
         }
     }
 
+    // TODO: better run verus for the first time and and make sures it verifies
+
     let num_asserts = file_stats.iter().map(|(_, fs)| fs.asserts.len()).sum::<usize>();
 
     // comment out each assert and run verus
@@ -1805,11 +1807,14 @@ struct JsonRoot {
 fn run_verus(proj_path: &std::path::Path) -> Result<(), String> {
     let file_path = proj_path.join("lib.rs");
 
+    // TODO: use relative verus path, which is in ../../target-verus/release/verus
     let cmd = std::process::Command::new("verus")
         .arg("--crate-type=dylib")
         .arg("--output-json")
         .arg("--time")
         .arg(file_path)
+        .arg("--rlimit")
+        .arg("20")
         .stdout(std::process::Stdio::piped())
         .output()
         .map_err(|e| format!("failed to run verus: {}", e))?;
