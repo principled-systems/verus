@@ -1,5 +1,7 @@
 # Verus Proof Minimizer
 
+If you only want to minimize a specific file, the easiest is to modify `lib.d` that get passed in, as the tool will only parse the file specified in `lib.d`.
+
 ## Known issues
 
 To run this, first run `verus` on a project with `--emit=dep-info`. This will output a `.d` file in the
