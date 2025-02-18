@@ -1397,8 +1397,13 @@ pub(crate) fn remove_ignored_trait_bounds_from_predicates<'tcx>(
                     true
                 }
             } else {
+                use crate::verus_items::RustItem;
                 let rust_item = crate::verus_items::get_rust_item(tcx, tp.trait_ref.def_id);
-                rust_item != Some(crate::verus_items::RustItem::Destruct)
+                match rust_item {
+                    Some(RustItem::Destruct) => false, // https://github.com/verus-lang/verus/pull/726
+                    Some(RustItem::SliceSealed) => false, // https://github.com/verus-lang/verus/pull/1434
+                    _ => true,
+                }
             }
         }
         rustc_middle::ty::ClauseKind::<'tcx>::ConstArgHasType(cnst, _ty) => {
