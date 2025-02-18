@@ -15,6 +15,7 @@ members = [
   "verusdoc",
   "vstd_build",
   "tools/internals_interface",
+  "tools/minimize",
   "tools/line_count",
   "tools/qi-graph",
 ]
