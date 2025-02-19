@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    env::current_dir,
     fmt::Debug,
     ops::RangeInclusive,
     rc::Rc,
@@ -1712,8 +1713,6 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
         }
     }
 
-    // TODO: better run verus for the first time and and make sures it verifies
-
     let num_asserts = file_stats.iter().map(|(_, fs)| fs.asserts.len()).sum::<usize>();
 
     // comment out each assert and run verus
@@ -1730,17 +1729,22 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
 
     let mut commented_asserts = 0;
 
+    // run verus for the first time
+    if let Err(e) = run_verus(&root_path) {
+        return Err(format!("verus failed to verify before minimization: {}", e));
+    }
+
     for (file, file_stats) in file_stats.iter() {
         for lines in file_stats.asserts.iter() {
             pb.inc(1);
-            println!("commenting out line {:?} in {:?}", lines, file);
-            let _ = comment_lines_out(&root_path.join(file), &lines.to_owned().into());
-            commented_asserts += 1;
-            if run_verus(&root_path).is_err() {
-                println!("verus failed, reverting");
-                commented_asserts -= 1;
-                let _ = uncomment_lines(&root_path.join(file), &lines.to_owned().into());
-            }
+            // println!("commenting out line {:?} in {:?}", lines, file);
+            // let _ = comment_lines_out(&root_path.join(file), &lines.to_owned().into());
+            // commented_asserts += 1;
+            // if run_verus(&root_path).is_err() {
+            //     println!("verus failed, reverting");
+            //     commented_asserts -= 1;
+            //     let _ = uncomment_lines(&root_path.join(file), &lines.to_owned().into());
+            // }
         }
     }
     pb.finish_with_message("Done!");
@@ -1807,8 +1811,25 @@ struct JsonRoot {
 fn run_verus(proj_path: &std::path::Path) -> Result<(), String> {
     let file_path = proj_path.join("lib.rs");
 
-    // TODO: use relative verus path, which is in ../../target-verus/release/verus
-    let cmd = std::process::Command::new("verus")
+    let verus_path = current_dir().unwrap().join("../../../target-verus/release/verus");
+
+    // anvil command:
+    // verus -L dependency=deps_hack/target/debug/deps --extern=deps_hack="deps_hack/target/debug/libdeps_hack.rlib" anvil.rs --crate-type=lib --time
+
+    // let cmd = std::process::Command::new(verus_path)
+    //     .current_dir(proj_path)
+    //     .arg("-L")
+    //     .arg("dependency=deps_hack/target/debug/deps")
+    //     .arg("--extern=deps_hack=deps_hack/target/debug/libdeps_hack.rlib")
+    //     .arg("anvil.rs")
+    //     .arg("--crate-type=lib")
+    //     .arg("--output-json")
+    //     .arg("--time")
+    //     .stdout(std::process::Stdio::piped())
+    //     .output()
+    //     .map_err(|e| format!("failed to run verus: {}", e))?;
+
+    let cmd = std::process::Command::new(verus_path)
         .arg("--crate-type=dylib")
         .arg("--output-json")
         .arg("--time")
