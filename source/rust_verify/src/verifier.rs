@@ -15,6 +15,7 @@ use air::profiler::Profiler;
 use rustc_errors::{Diag, EmissionGuarantee};
 use rustc_hir::OwnerNode;
 use rustc_interface::interface::Compiler;
+use rustc_interface::DEFAULT_QUERY_PROVIDERS;
 use rustc_session::config::ErrorOutputType;
 
 use vir::messages::{
@@ -2834,6 +2835,20 @@ impl rustc_driver::Callbacks for VerifierCallbacksEraseMacro {
                     tainted_by_errors: None,
                 })
             };
+
+            providers.mir_built = |tcx, local_def_id| {
+                let mir = (DEFAULT_QUERY_PROVIDERS.mir_built)(tcx, local_def_id);
+                let m_b = mir.borrow();
+                let lr = rustc_middle::mir::SourceScope::from(0usize).lint_root(&m_b.source_scopes);
+                for v in m_b.var_debug_info.iter() {
+                    dbg!(&v.name, &v.source_info, &v.value);
+                }
+                dbg!(&m_b.local_decls);
+                let hir_node = tcx.hir().node_to_string(lr.unwrap());
+                dbg!(&hir_node);
+                // dbg!(&mir);
+                mir
+            };
         });
     }
 
@@ -3004,6 +3019,14 @@ impl rustc_driver::Callbacks for VerifierCallbacksEraseMacro {
                 }
             );
         }
+        rustc_driver::Compilation::Continue
+    }
+
+    fn after_analysis<'tcx>(
+        &mut self,
+        _compiler: &rustc_interface::interface::Compiler,
+        _queries: &'tcx rustc_interface::Queries<'tcx>,
+    ) -> rustc_driver::Compilation {
         rustc_driver::Compilation::Stop
     }
 }
