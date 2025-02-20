@@ -1,9 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
-    env::current_dir,
-    fmt::Debug,
-    ops::RangeInclusive,
-    rc::Rc,
+    collections::{HashMap, HashSet}, env::current_dir, fmt::Debug, ops::RangeInclusive, path::PathBuf, rc::Rc, thread::{sleep, yield_now, JoinHandle}
 };
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -16,6 +12,7 @@ struct Config {
     json: bool,
     no_external_by_default: bool,
     delimiters_are_layout: bool,
+    permutations_dir: std::path::PathBuf,
 }
 
 fn main() {
@@ -26,6 +23,7 @@ fn main() {
     opts.optflag("h", "help", "print this help menu");
     opts.optflag("p", "print-all", "print all the annotated files");
     opts.optflag("", "no-external-by-default", "do not ignore items outside of verus! by default");
+    opts.reqopt("", "permutations-dir", "the directory to store the source permutations to test", "DIR");
     opts.optflag("", "json", "output as machine-readable json");
     opts.optflag("", "delimiters-are-layout", "consider delimiter-only lines as layout");
 
@@ -52,12 +50,15 @@ fn main() {
         print_usage(&program, opts);
         return;
     };
-
+    
+    let permutations_dir = PathBuf::from(matches.opt_str("permutations-dir").expect("permutations-dir is required"));
+    
     let config = Config {
         print_all: matches.opt_present("p"),
         json: matches.opt_present("json"),
         no_external_by_default: matches.opt_present("no-external-by-default"),
         delimiters_are_layout: matches.opt_present("delimiters-are-layout"),
+        permutations_dir,
     };
 
     match run(config, &std::path::Path::new(&deps_path)) {
@@ -176,7 +177,8 @@ impl std::fmt::Display for Lines {
     }
 }
 
-struct FileStats {
+struct FileData {
+    contents: String,
     lines: Box<[LineInfo]>,
     // each assert/assert_forall is some lines
     asserts: Vec<Lines>,
@@ -189,7 +191,7 @@ fn to_lines_range(spanned: &impl Spanned) -> RangeInclusive<usize> {
     (start_line - 1)..=(end_line - 1)
 }
 
-impl FileStats {
+impl FileData {
     #[allow(dead_code)]
     fn mark_kind(&mut self, spanned: &impl Spanned, kind: CodeKind) {
         for l in to_lines_range(spanned) {
@@ -245,7 +247,7 @@ impl FileStats {
 
 struct Visitor<'f> {
     inside_verus_macro_or_verify_or_consider: u64,
-    file_stats: &'f mut FileStats,
+    file_stats: &'f mut FileData,
     in_body: Option<CodeKind>,
     trusted: u64,
     in_proof_directive: u64,
@@ -1383,6 +1385,8 @@ fn get_dependencies(
     dep_file_path: &std::path::Path,
 ) -> Result<(std::path::PathBuf, Vec<std::path::PathBuf>), String> {
     use std::path::{Path, PathBuf};
+use std::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
 
     let file = std::fs::File::open(dep_file_path)
         .map_err(|x| format!("{}, dependency file name: {:?}", x, dep_file_path))?;
@@ -1462,7 +1466,8 @@ fn hash_set_to_sorted_vec<V: Clone + Ord>(h: &HashSet<V>) -> Vec<V> {
     v
 }
 
-fn process_file(config: Rc<Config>, input_path: &std::path::Path) -> Result<FileStats, String> {
+fn process_file(config: Rc<Config>, input_path: &std::path::Path) -> Result<FileData, String> {
+    // TODO check that input_path is relative to the project root
     let file_content = std::fs::read_to_string(input_path)
         .map_err(|e| format!("cannot read {} ({})", input_path.display(), e))?;
 
@@ -1471,7 +1476,8 @@ fn process_file(config: Rc<Config>, input_path: &std::path::Path) -> Result<File
         format!("failed to parse file {}: {}", input_path.display(), e)
     })?;
 
-    let mut file_stats = FileStats {
+    let mut file_stats = FileData {
+        contents: file_content,
         lines: file_content
             .lines()
             .map(|x| LineInfo {
@@ -1690,6 +1696,10 @@ fn warn(msg: &str) {
 fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     let config = Rc::new(config);
     let (root_path, files) = get_dependencies(deps_path)?;
+    
+    if config.permutations_dir.is_dir() {
+        panic!("permutations directory already exists");
+    }
 
     let file_stats = files
         .iter()
@@ -1714,7 +1724,7 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     }
 
     let num_asserts = file_stats.iter().map(|(_, fs)| fs.asserts.len()).sum::<usize>();
-
+    
     // comment out each assert and run verus
     // if it succeeded, keep it commented out, if not, revert
     let pb = ProgressBar::new(num_asserts as u64);
@@ -1730,22 +1740,47 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     let mut commented_asserts = 0;
 
     // run verus for the first time
-    if let Err(e) = run_verus(&root_path) {
+    if let Err(e) = run_verus(&root_path, 8) {
         return Err(format!("verus failed to verify before minimization: {}", e));
     }
-
-    for (file, file_stats) in file_stats.iter() {
-        for lines in file_stats.asserts.iter() {
-            pb.inc(1);
-            // println!("commenting out line {:?} in {:?}", lines, file);
-            // let _ = comment_lines_out(&root_path.join(file), &lines.to_owned().into());
-            // commented_asserts += 1;
-            // if run_verus(&root_path).is_err() {
-            //     println!("verus failed, reverting");
-            //     commented_asserts -= 1;
-            //     let _ = uncomment_lines(&root_path.join(file), &lines.to_owned().into());
-            // }
+    
+    let num_threads: usize = std::thread::available_parallelism().expect("we need to know how many threads are available") - 1;
+    
+    let mut queue = std::collections::VecDeque::from_iter(file_stats.iter().enumerate());
+    let mut running: Vec<JoinHandle<()>> = Vec<JoinHandle<()>>::new();
+    
+    while !queue.is_empty() {
+        if running.len() < num_threads {
+            let next = queue.pop_front().expect("queue was not empty");
+            running.push(std::thread::spawn(|| {
+                std::fs::create_dir(config.permutations_dir.join(i)).expect("create directory");
+                for (path, _) in file_stats.iter() {
+                    let file_path = config.permutations_dir.join(i).join(path);
+                    std::fs::write(&file_path, file_stats.contents.clone()).expect("write file");
+                }
+                
+                for lines in file_stats.asserts.iter() {
+                    pb.inc(1);
+                    println!("commenting out line {:?} in {:?}", lines, file);
+                    let _ = comment_lines_out(&root_path.join(config.permutations_dir.join(i).join(file)), &lines.to_owned().into());
+                    commented_asserts += 1;
+                    if run_verus(&config.permutations_dir.join(i), 1).is_err() {
+                        println!("verus failed, reverting");
+                        commented_asserts -= 1;
+                        let _ = uncomment_lines(&root_path.join(file), &lines.to_owned().into());
+                    }
+                }
+                std::fs::::remove_dir_all(config.permutations_dir.join(i)).expect("remove directory");
+            }));
+        } else {
+            sleep(duration::from_millis(100));
         }
+        running.retain(|x| !x.is_finished());
+    }
+    
+    for (i, (file, file_stats)) in  {
+        // TODO maybe defensively check file path is relative (lib.d should have been generated at the root of the project)
+        
     }
     pb.finish_with_message("Done!");
 
@@ -1808,7 +1843,7 @@ struct JsonRoot {
     times_ms: VerificationTime,
 }
 
-fn run_verus(proj_path: &std::path::Path) -> Result<(), String> {
+fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<(), String> {
     let file_path = proj_path.join("lib.rs");
 
     let verus_path = current_dir().unwrap().join("../../../target-verus/release/verus");
@@ -1836,6 +1871,8 @@ fn run_verus(proj_path: &std::path::Path) -> Result<(), String> {
         .arg(file_path)
         .arg("--rlimit")
         .arg("20")
+        .arg("--threads")
+        .arg(num_threads.to_string())
         .stdout(std::process::Stdio::piped())
         .output()
         .map_err(|e| format!("failed to run verus: {}", e))?;
