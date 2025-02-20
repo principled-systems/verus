@@ -1475,38 +1475,34 @@ fn process_file(config: Rc<Config>, input_path: &std::path::Path) -> Result<File
                 let mut path_iter = path.segments.iter();
                 match (path_iter.next(), path_iter.next()) {
                     (Some(first), None) if first.ident == "cfg_attr" => {
-                        dbg!(&attr);
-                        // TODO: attr.parse_nested_meta(|meta| {
-                        // TODO:     if !meta.path.is_ident("verus_keep_ghost") {
-                        // TODO:
-                        // TODO:     }
-                        // TODO:     let meta_path_iter = meta.path.segments.iter();
-                        // TODO:     match (nested_iter.next(), nested_iter.next()) {
-                        // TODO:         (
-                        // TODO:             Some(syn_verus::NestedMeta::Meta(Meta::Path(first))),
-                        // TODO:             Some(syn_verus::NestedMeta::Meta(Meta::Path(second))),
-                        // TODO:         ) if first
-                        // TODO:             .segments
-                        // TODO:             .iter()
-                        // TODO:             .next()
-                        // TODO:             .as_ref()
-                        // TODO:             .map(|x| x.ident == "verus_keep_ghost")
-                        // TODO:             .unwrap_or(false) =>
-                        // TODO:         {
-                        // TODO:             let mut path_iter = second.segments.iter();
-                        // TODO:             match (path_iter.next(), path_iter.next()) {
-                        // TODO:                 (Some(first), Some(second))
-                        // TODO:                     if first.ident == "verus" && second.ident == "trusted" =>
-                        // TODO:                 {
-                        // TODO:                     visitor.trusted += 1;
-                        // TODO:                 }
-                        // TODO:                 _ => {}
-                        // TODO:             }
-                        // TODO:         }
-                        // TODO:         _ => {}
-                        // TODO:     }
-                        // TODO:     Ok(())
-                        // TODO: });
+                        let nested = attr.parse_args_with(syn_verus::punctuated::Punctuated::<Meta, syn_verus::Token![,]>::parse_terminated)
+                            .map_err(|e| {
+                                dbg!(&e.span().start(), &e.span().end());
+                                format!("failed to parse attribute: {} {:?}", e, e.span())
+                            })?;
+                        let mut nested_iter = nested.iter();
+                        match (nested_iter.next(), nested_iter.next()) {
+                            (Some(Meta::Path(first)), Some(Meta::Path(second)))
+                                if first
+                                    .segments
+                                    .iter()
+                                    .next()
+                                    .as_ref()
+                                    .map(|x| x.ident == "verus_keep_ghost")
+                                    .unwrap_or(false) =>
+                            {
+                                let mut path_iter = second.segments.iter();
+                                match (path_iter.next(), path_iter.next()) {
+                                    (Some(first), Some(second))
+                                        if first.ident == "verus" && second.ident == "trusted" =>
+                                    {
+                                        visitor.trusted += 1;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                     _ => (),
                 }
