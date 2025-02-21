@@ -1,5 +1,12 @@
 use std::{
-    collections::{HashMap, HashSet}, env::current_dir, fmt::Debug, ops::RangeInclusive, path::PathBuf, rc::Rc, thread::{sleep, yield_now, JoinHandle}
+    collections::{HashMap, HashSet},
+    env::current_dir,
+    fmt::Debug,
+    io::{self, Write},
+    ops::RangeInclusive,
+    path::PathBuf,
+    sync::Arc,
+    thread::{sleep, JoinHandle},
 };
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -7,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use syn_verus::{spanned::Spanned, visit::Visit, Attribute, File, Meta, MetaList, Signature};
 
 struct Config {
+    #[allow(dead_code)]
     print_all: bool,
     #[allow(dead_code)]
     json: bool,
@@ -23,7 +31,12 @@ fn main() {
     opts.optflag("h", "help", "print this help menu");
     opts.optflag("p", "print-all", "print all the annotated files");
     opts.optflag("", "no-external-by-default", "do not ignore items outside of verus! by default");
-    opts.reqopt("", "permutations-dir", "the directory to store the source permutations to test", "DIR");
+    opts.reqopt(
+        "d",
+        "permutations-dir",
+        "the directory to store the source permutations to test",
+        "DIR",
+    );
     opts.optflag("", "json", "output as machine-readable json");
     opts.optflag("", "delimiters-are-layout", "consider delimiter-only lines as layout");
 
@@ -50,9 +63,10 @@ fn main() {
         print_usage(&program, opts);
         return;
     };
-    
-    let permutations_dir = PathBuf::from(matches.opt_str("permutations-dir").expect("permutations-dir is required"));
-    
+
+    let permutations_dir =
+        PathBuf::from(matches.opt_str("permutations-dir").expect("permutations-dir is required"));
+
     let config = Config {
         print_all: matches.opt_present("p"),
         json: matches.opt_present("json"),
@@ -121,7 +135,7 @@ impl ToCodeKind for syn_verus::FnMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 enum StateMachineCode {
     NameAndFields,
     Transition,
@@ -129,7 +143,7 @@ enum StateMachineCode {
     StructWithInvariantBody,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 enum LineContent {
     Const(CodeKind),
     Code(CodeKind),
@@ -151,6 +165,7 @@ enum LineContent {
     Atomic,
 }
 
+#[derive(Debug, Clone, Serialize)]
 struct LineInfo {
     kinds: HashSet<CodeKind>,
     #[allow(dead_code)]
@@ -177,6 +192,7 @@ impl std::fmt::Display for Lines {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
 struct FileData {
     contents: String,
     lines: Box<[LineInfo]>,
@@ -253,7 +269,7 @@ struct Visitor<'f> {
     in_proof_directive: u64,
     in_state_machine_macro: u64,
     inside_line_count_ignore_or_external: u64,
-    config: Rc<Config>,
+    config: Arc<Config>,
 }
 
 impl<'f> Visitor<'f> {
@@ -1367,26 +1383,11 @@ impl<'f> Visitor<'f> {
     }
 }
 
-fn cut_string(s: String, len: usize) -> String {
-    s.chars().take(len).collect()
-}
-
-fn hash_map_to_fit_string<V: std::fmt::Debug>(h: &[V], len: usize) -> String {
-    if h.len() != 0 {
-        let each_len = (len / h.len()) - 1;
-        h.iter().map(|x| cut_string(format!("{:?}", x), each_len)).collect::<Vec<_>>().join(" ")
-    } else {
-        "".into()
-    }
-}
-
 // parse the .d file and returns a vector of files names required to generate the crate
 fn get_dependencies(
     dep_file_path: &std::path::Path,
 ) -> Result<(std::path::PathBuf, Vec<std::path::PathBuf>), String> {
     use std::path::{Path, PathBuf};
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
 
     let file = std::fs::File::open(dep_file_path)
         .map_err(|x| format!("{}, dependency file name: {:?}", x, dep_file_path))?;
@@ -1460,13 +1461,7 @@ impl std::iter::Sum for Summary {
     }
 }
 
-fn hash_set_to_sorted_vec<V: Clone + Ord>(h: &HashSet<V>) -> Vec<V> {
-    let mut v: Vec<_> = h.iter().cloned().collect();
-    v.sort();
-    v
-}
-
-fn process_file(config: Rc<Config>, input_path: &std::path::Path) -> Result<FileData, String> {
+fn process_file(config: Arc<Config>, input_path: &std::path::Path) -> Result<FileData, String> {
     // TODO check that input_path is relative to the project root
     let file_content = std::fs::read_to_string(input_path)
         .map_err(|e| format!("cannot read {} ({})", input_path.display(), e))?;
@@ -1477,7 +1472,7 @@ fn process_file(config: Rc<Config>, input_path: &std::path::Path) -> Result<File
     })?;
 
     let mut file_stats = FileData {
-        contents: file_content,
+        contents: file_content.clone(),
         lines: file_content
             .lines()
             .map(|x| LineInfo {
@@ -1690,39 +1685,30 @@ fn warn(msg: &str) {
 }
 
 fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
-    let config = Rc::new(config);
+    let config = Arc::new(config);
     let (root_path, files) = get_dependencies(deps_path)?;
-    
+
     if config.permutations_dir.is_dir() {
-        panic!("permutations directory already exists");
-    }
+        println!("The permutations directory already exists. Do you want to delete it? (y/n): ");
+        io::stdout().flush().unwrap();
 
-    let file_stats = files
-        .iter()
-        .map(|f| process_file(config.clone(), &root_path.join(f)).map(|fs| (f, fs)))
-        .collect::<Result<Vec<_>, String>>()?;
-
-    if config.print_all {
-        eprintln!("{:18} | {:30} | {}", "Category", "Detailed contents", "");
-        eprintln!();
-        for (file, file_stats) in file_stats.iter() {
-            eprintln!("# {}", file.display());
-            for l in file_stats.lines.iter() {
-                eprintln!(
-                    "{:18} | {:30} | {}",
-                    hash_map_to_fit_string(&hash_set_to_sorted_vec(&l.kinds)[..], 30),
-                    hash_map_to_fit_string(&hash_set_to_sorted_vec(&l.line_content)[..], 30),
-                    l.text
-                );
-            }
-            eprintln!();
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        if input.trim().to_lowercase() == "y" {
+            std::fs::remove_dir_all(&config.permutations_dir)
+                .expect("Failed to delete the directory");
+        } else {
+            panic!("permutations directory already exists");
         }
     }
 
+    let file_stats: Vec<(PathBuf, FileData)> = files
+        .iter()
+        .map(|f| process_file(config.clone(), &root_path.join(f)).map(|fs| (f.clone(), fs)))
+        .collect::<Result<Vec<_>, String>>()?;
+
     let num_asserts = file_stats.iter().map(|(_, fs)| fs.asserts.len()).sum::<usize>();
-    
-    // comment out each assert and run verus
-    // if it succeeded, keep it commented out, if not, revert
+
     let pb = ProgressBar::new(num_asserts as u64);
     pb.set_style(
         ProgressStyle::default_bar()
@@ -1733,51 +1719,85 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
             .progress_chars("#>-"),
     );
 
-    let mut commented_asserts = 0;
-
     // run verus for the first time
-    if let Err(e) = run_verus(&root_path, 8) {
+    if let Err(e) = run_verus(&root_path, 7) {
         return Err(format!("verus failed to verify before minimization: {}", e));
     }
-    
-    let num_threads: usize = std::thread::available_parallelism().expect("we need to know how many threads are available") - 1;
-    
-    let mut queue = std::collections::VecDeque::from_iter(file_stats.iter().enumerate());
-    let mut running: Vec<JoinHandle<()>> = Vec<JoinHandle<()>>::new();
-    
+
+    // comment out each assert and run verus
+    // if it succeeded, keep it commented out, if not, revert
+    let num_threads: usize = <std::num::NonZero<usize> as Into<usize>>::into(
+        std::thread::available_parallelism()
+            .expect("we need to know how many threads are available"),
+    ) - 1;
+
+    let mut queue =
+        std::collections::VecDeque::from_iter(file_stats.clone().into_iter().enumerate());
+    let mut running = Vec::<JoinHandle<()>>::new();
+
     while !queue.is_empty() {
         if running.len() < num_threads {
-            let next = queue.pop_front().expect("queue was not empty");
-            running.push(std::thread::spawn(|| {
-                std::fs::create_dir(config.permutations_dir.join(i)).expect("create directory");
-                for (path, _) in file_stats.iter() {
-                    let file_path = config.permutations_dir.join(i).join(path);
-                    std::fs::write(&file_path, file_stats.contents.clone()).expect("write file");
+            let (file_no, (next_file, next_file_data)) =
+                queue.pop_front().expect("queue was not empty");
+            let config = config.clone();
+            let file_stats = file_stats.clone();
+            let pb = pb.clone();
+            let original_file = root_path.join(next_file.clone());
+            running.push(std::thread::spawn(move || {
+                std::fs::create_dir_all(
+                    config.permutations_dir.join(std::path::Path::new(&file_no.to_string())),
+                )
+                .expect("create directory");
+
+                for (path, file_data) in file_stats.iter() {
+                    let file_path = config
+                        .permutations_dir
+                        .join(std::path::Path::new(&file_no.to_string()))
+                        .join(path);
+                    if let Some(parent) = file_path.parent() {
+                        std::fs::create_dir_all(parent).expect("create directories");
+                    }
+                    std::fs::write(&file_path, file_data.contents.clone()).expect("write file");
                 }
-                
-                for lines in file_stats.asserts.iter() {
+
+                let file_to_mutate = config
+                    .permutations_dir
+                    .join(std::path::Path::new(&file_no.to_string()))
+                    .join(next_file);
+                for lines in next_file_data.asserts.iter() {
                     pb.inc(1);
-                    println!("commenting out line {:?} in {:?}", lines, file);
-                    let _ = comment_lines_out(&root_path.join(config.permutations_dir.join(i).join(file)), &lines.to_owned().into());
-                    commented_asserts += 1;
-                    if run_verus(&config.permutations_dir.join(i), 1).is_err() {
+                    println!("commenting out line {:?} in {:?}", lines, file_to_mutate);
+                    let _ = comment_lines_out(&file_to_mutate, &lines.to_owned().into());
+                    if run_verus(
+                        &config.permutations_dir.join(std::path::Path::new(&file_no.to_string())),
+                        1,
+                    )
+                    .is_err()
+                    {
                         println!("verus failed, reverting");
-                        commented_asserts -= 1;
-                        let _ = uncomment_lines(&root_path.join(file), &lines.to_owned().into());
+                        let _ = uncomment_lines(&file_to_mutate, &lines.to_owned().into());
                     }
                 }
-                std::fs::::remove_dir_all(config.permutations_dir.join(i)).expect("remove directory");
+                println!("minimization of {} is completed", file_to_mutate.display());
+                // copy back to original location with _min suffix if the file content is changed
+                if std::fs::read_to_string(&file_to_mutate).expect("read file")
+                    != std::fs::read_to_string(&original_file).expect("read original file")
+                {
+                    std::fs::copy(&file_to_mutate, original_file.with_extension("min.rs"))
+                        .expect("copy file");
+                }
             }));
         } else {
-            sleep(duration::from_millis(100));
+            // to free up the scheduler thread
+            sleep(std::time::Duration::from_millis(100));
         }
         running.retain(|x| !x.is_finished());
     }
-    
-    for (i, (file, file_stats)) in  {
-        // TODO maybe defensively check file path is relative (lib.d should have been generated at the root of the project)
-        
+
+    for handle in running {
+        handle.join().expect("Thread panicked");
     }
+
     pb.finish_with_message("Done!");
 
     Ok(())
@@ -1842,7 +1862,7 @@ struct JsonRoot {
 fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<(), String> {
     let file_path = proj_path.join("lib.rs");
 
-    let verus_path = current_dir().unwrap().join("../../../target-verus/release/verus");
+    let verus_path = current_dir().unwrap().join("../../target-verus/release/verus");
 
     // anvil command:
     // verus -L dependency=deps_hack/target/debug/deps --extern=deps_hack="deps_hack/target/debug/libdeps_hack.rlib" anvil.rs --crate-type=lib --time
@@ -1867,11 +1887,14 @@ fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<(), Stri
         .arg(file_path)
         .arg("--rlimit")
         .arg("20")
-        .arg("--threads")
+        .arg("--num-threads")
         .arg(num_threads.to_string())
         .stdout(std::process::Stdio::piped())
         .output()
         .map_err(|e| format!("failed to run verus: {}", e))?;
+
+    // print stderr
+    // eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
 
     let output: JsonRoot = serde_json::from_slice(&cmd.stdout)
         .map_err(|e| format!("failed to parse verus output: {}", e))?;
