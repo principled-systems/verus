@@ -1736,7 +1736,8 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     let mut running = Vec::<JoinHandle<()>>::new();
 
     while !queue.is_empty() {
-        if running.len() < num_threads {
+        // allocate 4 threads to each verus process
+        if running.len() < num_threads / 4 {
             let (file_no, (next_file, next_file_data)) =
                 queue.pop_front().expect("queue was not empty");
             let config = config.clone();
@@ -1770,7 +1771,7 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
                     let _ = comment_lines_out(&file_to_mutate, &lines.to_owned().into());
                     if run_verus(
                         &config.permutations_dir.join(std::path::Path::new(&file_no.to_string())),
-                        1,
+                        4,
                     )
                     .is_err()
                     {
