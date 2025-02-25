@@ -1720,9 +1720,9 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     );
 
     // run verus for the first time
-    // if let Err(e) = run_verus(&root_path, 7) {
-    //     return Err(format!("verus failed to verify before minimization: {}", e));
-    // }
+    if let Err(e) = run_verus(&root_path, 7) {
+        return Err(format!("verus failed to verify before minimization: {}", e));
+    }
 
     // comment out each assert and run verus
     // if it succeeded, keep it commented out, if not, revert
@@ -1765,16 +1765,19 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
 
                 // Create deps_hack_dst directory and copy deps_hack directory using fs_extra
                 let deps_hack_src = deps_hack_path.clone();
-                let deps_hack_dst = config
-                    .permutations_dir
-                    .join(std::path::Path::new(&file_no.to_string()));
+                let deps_hack_dst =
+                    config.permutations_dir.join(std::path::Path::new(&file_no.to_string()));
                 if !deps_hack_src.exists() {
                     panic!("where is deps_hack")
                 }
                 // copying
                 std::fs::create_dir_all(&deps_hack_dst).expect("create deps_hack_dst directory");
-                fs_extra::dir::copy(&deps_hack_src, &deps_hack_dst, &fs_extra::dir::CopyOptions::new())
-                    .expect("copy deps_hack directory");
+                fs_extra::dir::copy(
+                    &deps_hack_src,
+                    &deps_hack_dst,
+                    &fs_extra::dir::CopyOptions::new(),
+                )
+                .expect("copy deps_hack directory");
 
                 let file_to_mutate = config
                     .permutations_dir
@@ -1888,7 +1891,9 @@ fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<(), Stri
         .arg("-L")
         .arg("dependency=deps_hack/target/debug/deps")
         .arg("--extern=deps_hack=deps_hack/target/debug/libdeps_hack.rlib")
-        .arg("anvil.rs")
+        .arg("fluent_controller.rs")
+        .arg("--rlimit")
+        .arg("50")
         .arg("--crate-type=lib")
         .arg("--output-json")
         .arg("--time")
@@ -1912,7 +1917,7 @@ fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<(), Stri
     //     .map_err(|e| format!("failed to run verus: {}", e))?;
 
     // print stderr
-    eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
+    // eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
 
     let output: JsonRoot = serde_json::from_slice(&cmd.stdout)
         .map_err(|e| format!("failed to parse verus output: {}", e))?;
