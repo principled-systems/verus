@@ -82,6 +82,7 @@ pub(crate) fn stm_assign(
         | StmX::Fuel(..)
         | StmX::RevealString(_)
         | StmX::Return { .. }
+        | StmX::Here { .. }
         | StmX::Air(_) => stm.clone(),
         StmX::Assign { lhs: Dest { dest, is_init }, rhs: _ } => {
             let var = get_loc_var(dest);

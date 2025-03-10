@@ -88,6 +88,7 @@ pub(crate) fn def_id_to_stable_rust_path<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId)
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub(crate) enum SpecItem {
+    Here,
     Admit,
     Assume,
     NoMethodBody,
@@ -347,6 +348,7 @@ pub(crate) enum VerusItem {
 #[rustfmt::skip]
 fn verus_items_map() -> Vec<(&'static str, VerusItem)> {
     vec![
+        ("verus::builtin::here_internal",           VerusItem::Spec(SpecItem::Here)),
         ("verus::builtin::admit",                   VerusItem::Spec(SpecItem::Admit)),
         ("verus::builtin::assume_",                 VerusItem::Spec(SpecItem::Assume)),
         ("verus::builtin::no_method_body",          VerusItem::Spec(SpecItem::NoMethodBody)),

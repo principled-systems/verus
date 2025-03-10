@@ -819,6 +819,8 @@ pub enum ExprX {
     AssertQuery { requires: Exprs, ensures: Exprs, proof: Expr, mode: AssertQueryMode },
     /// Assertion discharged via computation
     AssertCompute(Expr, ComputeMode),
+    /// Proof state visibility
+    Here {},
     /// If-else
     If(Expr, Expr, Option<Expr>),
     /// Match (Note: ast_simplify replaces Match with other expressions)

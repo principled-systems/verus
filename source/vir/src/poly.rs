@@ -808,6 +808,7 @@ fn visit_stm(ctx: &Ctx, state: &mut State, stm: &Stm) -> Stm {
         }
         StmX::Fuel(_, _) => stm.clone(),
         StmX::RevealString(_) => stm.clone(),
+        StmX::Here { .. } => stm.clone(),
         StmX::DeadEnd(stm) => {
             let stm = visit_stm(ctx, state, stm);
             mk_stm(StmX::DeadEnd(stm))

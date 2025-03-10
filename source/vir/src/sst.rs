@@ -164,6 +164,7 @@ pub enum StmX {
         lhs: Dest,
         rhs: Exp,
     },
+    Here {},
     Fuel(Fun, u32),
     RevealString(Arc<String>),
     DeadEnd(Stm),

@@ -2233,6 +2233,10 @@ pub(crate) fn expr_to_stm_opt(
             let stmt = Spanned::new(expr.span.clone(), StmX::Air(s.clone()));
             return Ok((vec![stmt], ReturnValue::ImplicitUnit(expr.span.clone())));
         }
+        ExprX::Here {} => {
+            let stmt = Spanned::new(expr.span.clone(), StmX::Here {});
+            Ok((vec![stmt], ReturnValue::ImplicitUnit(expr.span.clone())))
+        }
     }
 }
 

@@ -468,6 +468,11 @@ fn verus_item_to_vir<'tcx, 'a>(
                 let arg = mk_one_vir_arg(bctx, expr.span, &args)?;
                 mk_expr(ExprX::AssertAssume { is_assume: true, expr: arg })
             }
+            SpecItem::Here => {
+                record_spec_fn_no_proof_args(bctx, expr);
+                unsupported_err_unless!(args_len == 0, expr.span, "expected here", args);
+                mk_expr(ExprX::Here {})
+            }
         },
         VerusItem::Quant(quant_item) => {
             record_spec_fn_no_proof_args(bctx, expr);

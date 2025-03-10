@@ -352,6 +352,20 @@ pub fn use_type_invariant<A>(_a: A) {
     unimplemented!();
 }
 
+#[cfg(verus_keep_ghost)]
+#[rustc_diagnostic_item = "verus::builtin::here_internal"]
+#[verifier::proof]
+pub fn here_internal() {
+    unimplemented!();
+}
+
+#[macro_export]
+macro_rules! here {
+    () => {
+        here_internal()
+    };
+}
+
 //
 // Ghost, Tracked
 //
