@@ -2554,6 +2554,7 @@ fn stm_to_stmts(ctx: &Ctx, state: &mut State, stm: &Stm) -> Result<Vec<Stmt>, Vi
         }
         StmX::Here { .. } => {
             // TODO: lower `here` marker to AIR
+            dbg!(&stm);
             Vec::new()
         }
     };

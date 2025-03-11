@@ -651,16 +651,68 @@ pub(crate) fn block_to_vir<'tcx>(
     ty: &Typ,
     mut modifier: ExprModifier,
 ) -> Result<vir::ast::Expr, VirErr> {
+    use std::sync::atomic::Ordering::Relaxed;
+
+    let mut here = bctx.ctxt.here.as_deref().filter(|(here_span, enter_flag, place_flag)| {
+        if place_flag.load(Relaxed) {
+            return false;
+        }
+
+        if here_span.hi() < span.lo() && !enter_flag.load(Relaxed) {
+            eprintln!("error: invalid `--here` placement");
+            place_flag.store(true, Relaxed);
+            return false;
+        }
+
+        if span.contains(*here_span) {
+            enter_flag.store(true, Relaxed);
+            return true;
+        }
+
+        false
+    });
+
     let mut vir_stmts: Vec<vir::ast::Stmt> = Vec::new();
     let mut stmts_iter = block.stmts.iter();
-    while let Some(mut some_stmts) = stmts_to_vir(bctx, &mut stmts_iter)? {
+
+    loop {
+        if let Some((here_span, _, flag)) = here {
+            if let Some(stmt) = stmts_iter.clone().next() {
+                if here_span.lo() < stmt.span.lo() && !flag.load(Relaxed) {
+                    let typ = Arc::new(TypX::Bool);
+                    let expr = bctx.spanned_typed_new(*here_span, &typ, ExprX::Here {});
+                    let stmt = bctx.spanned_new(*here_span, StmtX::Expr(expr));
+                    vir_stmts.push(stmt);
+
+                    here = None;
+                    flag.store(true, Relaxed);
+                }
+            }
+        }
+
+        let Some(mut some_stmts) = stmts_to_vir(bctx, &mut stmts_iter)? else {
+            break
+        };
+
         vir_stmts.append(&mut some_stmts);
     }
+
     if block.stmts.len() != 0 {
         modifier = ExprModifier { deref_mut: false, ..modifier };
     }
-    let vir_expr = block.expr.map(|expr| expr_to_vir(bctx, &expr, modifier)).transpose()?;
 
+    if let Some((here_span, _, flag)) = here {
+        if !flag.load(Relaxed) {
+            let typ = Arc::new(TypX::Bool);
+            let expr = bctx.spanned_typed_new(*here_span, &typ, ExprX::Here {});
+            let stmt = bctx.spanned_new(*here_span, StmtX::Expr(expr));
+            vir_stmts.push(stmt);
+
+            flag.store(true, Relaxed);
+        }
+    }
+
+    let vir_expr = block.expr.map(|expr| expr_to_vir(bctx, &expr, modifier)).transpose()?;
     let x = ExprX::Block(Arc::new(vir_stmts), vir_expr);
     Ok(bctx.spanned_typed_new(span.clone(), ty, x))
 }

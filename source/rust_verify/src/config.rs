@@ -1,6 +1,6 @@
 use air::context::SmtSolver;
 use getopts::Options;
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, str::FromStr, sync::Arc};
 use vir::printer::ToDebugSNodeOpts as VirLogOption;
 
 pub const DEFAULT_RLIMIT_SECS: f32 = 10f32;
@@ -109,6 +109,7 @@ pub struct ArgsX {
     pub solver: SmtSolver,
     #[cfg(feature = "axiom-usage-info")]
     pub axiom_usage_info: bool,
+    pub here_loc: Option<(std::path::PathBuf, usize, u32)>,
 }
 
 impl ArgsX {
@@ -153,6 +154,7 @@ impl ArgsX {
             solver: Default::default(),
             #[cfg(feature = "axiom-usage-info")]
             axiom_usage_info: Default::default(),
+            here_loc: None,
         }
     }
 }
@@ -222,6 +224,7 @@ pub fn parse_args_with_imports(
     const OPT_IS_VSTD: &str = "is-vstd";
     const OPT_IS_CORE: &str = "is-core";
     const OPT_EXPAND_ERRORS: &str = "expand-errors";
+    const OPT_HERE: &str = "here";
 
     const OPT_LOG_DIR: &str = "log-dir";
     const OPT_LOG_ALL: &str = "log-all";
@@ -451,6 +454,15 @@ pub fn parse_args_with_imports(
         "Rerun verus and package source files of the current crate to the current directory, alongside with output and version information. The file will be named YYYY-MM-DD-HH-MM-SS.zip. If you are reporting an error, please keep the original arguments in addition to this flag",
     );
 
+    opts.optopt(
+        "",
+        OPT_HERE,
+        "A sneaky way to insert the `here!()` macro into a crate without modifying the source code. \
+        This option exists to allow IDEs (such as verus-analyser) to better intergate with proof state visibility, it is not intended to be used by humans. \
+        Currently, this option is highly experimental and may not work as expected.",
+        "LOC"
+    );
+
     opts.optmulti(
         OPT_EXTENDED_MULTI,
         "",
@@ -551,6 +563,14 @@ pub fn parse_args_with_imports(
             }
         }
     }
+
+    let here_loc = matches.opt_str(OPT_HERE).and_then(|s| {
+        let mut parts = s.split(':');
+        let file = std::path::PathBuf::from_str(parts.next().unwrap()).unwrap();
+        let line = parts.next().unwrap().parse::<usize>().unwrap().checked_sub(1).unwrap();
+        let col = parts.next().unwrap().parse::<u32>().unwrap().checked_sub(1).unwrap();
+        Some((file, line, col))
+    });
 
     let args = ArgsX {
         verify_root: matches.opt_present(OPT_VERIFY_ROOT),
@@ -691,6 +711,7 @@ pub fn parse_args_with_imports(
         solver: if extended.get(EXTENDED_CVC5).is_some() { SmtSolver::Cvc5 } else { SmtSolver::Z3 },
         #[cfg(feature = "axiom-usage-info")]
         axiom_usage_info: extended.get(EXTENDED_AXIOM_USAGE_INFO).is_some(),
+        here_loc,
     };
 
     (Arc::new(args), unmatched)

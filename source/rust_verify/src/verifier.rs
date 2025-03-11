@@ -30,6 +30,7 @@ use rustc_span::Span;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::Write;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vir::context::{FuncCallGraphLogFiles, GlobalCtx};
@@ -2558,6 +2559,17 @@ impl Verifier {
             return Ok(false);
         }
 
+        let here = self.args.here_loc.as_ref().cloned().map(|(path, row, col)| {
+            let real = rustc_span::FileName::Real(rustc_span::RealFileName::LocalPath(path));
+            let file = tcx.sess.source_map().get_source_file(&real).unwrap();
+            let line = file.line_bounds(row);
+            let off = std::cmp::min(line.start.0 + col, line.end.0 - 1);
+            let pos = rustc_span::BytePos(off);
+            let ctxt = rustc_span::hygiene::SyntaxContext::root();
+            let span = rustc_span::Span::new(pos, pos, ctxt, None);
+            Arc::new((span, AtomicBool::new(false), AtomicBool::new(false)))
+        });
+
         let hir = tcx.hir();
         hir.par_body_owners(|def_id| tcx.ensure().check_match(def_id));
         tcx.ensure().check_private_in_public(());
@@ -2622,6 +2634,7 @@ impl Verifier {
             arch_word_bits: None,
             crate_name: Arc::new(crate_name.clone()),
             vstd_crate_name,
+            here,
         });
         let multi_crate = self.args.export.is_some() || import_len > 0 || self.args.use_crate_name;
         crate::rust_to_vir_base::MULTI_CRATE
