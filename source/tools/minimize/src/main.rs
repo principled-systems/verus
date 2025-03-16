@@ -1720,9 +1720,9 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     );
 
     // run verus for the first time
-    // if let Err(e) = run_verus(&root_path, 7) {
-    //     return Err(format!("verus failed to verify before minimization: {}", e));
-    // }
+    if let Err(e) = run_verus(&root_path, 7) {
+        return Err(format!("verus failed to verify before minimization: {}", e));
+    }
 
     // comment out each assert and run verus
     // if it succeeded, keep it commented out, if not, revert
@@ -1744,8 +1744,6 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
             let file_stats = file_stats.clone();
             let pb = pb.clone();
             let original_file = root_path.join(next_file.clone());
-            let deps_hack_path = root_path.join("deps_hack");
-            eprintln!("deps hack: {:?}", deps_hack_path);
             running.push(std::thread::spawn(move || {
                 std::fs::create_dir_all(
                     config.permutations_dir.join(std::path::Path::new(&file_no.to_string())),
@@ -1762,19 +1760,6 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
                     }
                     std::fs::write(&file_path, file_data.contents.clone()).expect("write file");
                 }
-
-                // Create deps_hack_dst directory and copy deps_hack directory using fs_extra
-                let deps_hack_src = deps_hack_path.clone();
-                let deps_hack_dst = config
-                    .permutations_dir
-                    .join(std::path::Path::new(&file_no.to_string()));
-                if !deps_hack_src.exists() {
-                    panic!("where is deps_hack")
-                }
-                // copying
-                std::fs::create_dir_all(&deps_hack_dst).expect("create deps_hack_dst directory");
-                fs_extra::dir::copy(&deps_hack_src, &deps_hack_dst, &fs_extra::dir::CopyOptions::new())
-                    .expect("copy deps_hack directory");
 
                 let file_to_mutate = config
                     .permutations_dir
@@ -1876,43 +1861,25 @@ struct JsonRoot {
 }
 
 fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<(), String> {
-    // let file_path = proj_path.join("lib.rs");
+    let file_path = proj_path.join("lib.rs");
 
     let verus_path = current_dir().unwrap().join("../../target-verus/release/verus");
 
-    // anvil command:
-    // verus -L dependency=deps_hack/target/debug/deps --extern=deps_hack="deps_hack/target/debug/libdeps_hack.rlib" anvil.rs --crate-type=lib --time
-
     let cmd = std::process::Command::new(verus_path)
-        .current_dir(proj_path)
-        .arg("-L")
-        .arg("dependency=deps_hack/target/debug/deps")
-        .arg("--extern=deps_hack=deps_hack/target/debug/libdeps_hack.rlib")
-        .arg("anvil.rs")
-        .arg("--crate-type=lib")
+        .arg("--crate-type=dylib")
         .arg("--output-json")
         .arg("--time")
+        .arg(file_path)
+        .arg("--rlimit")
+        .arg("20")
         .arg("--num-threads")
         .arg(num_threads.to_string())
         .stdout(std::process::Stdio::piped())
         .output()
         .map_err(|e| format!("failed to run verus: {}", e))?;
 
-    // let cmd = std::process::Command::new(verus_path)
-    //     .arg("--crate-type=dylib")
-    //     .arg("--output-json")
-    //     .arg("--time")
-    //     .arg(file_path)
-    //     .arg("--rlimit")
-    //     .arg("20")
-    //     .arg("--num-threads")
-    //     .arg(num_threads.to_string())
-    //     .stdout(std::process::Stdio::piped())
-    //     .output()
-    //     .map_err(|e| format!("failed to run verus: {}", e))?;
-
     // print stderr
-    eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
+    // eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
 
     let output: JsonRoot = serde_json::from_slice(&cmd.stdout)
         .map_err(|e| format!("failed to parse verus output: {}", e))?;
