@@ -1,6 +1,6 @@
 use crate::commands::{Op, OpGenerator, OpKind, QueryOp, Style};
 use crate::config::{Args, ShowTriggers};
-use crate::context::{ContextX, ErasureInfo};
+use crate::context::{ContextX, ErasureInfo, HerePlacement};
 use crate::debugger::Debugger;
 use crate::externs::VerusExterns;
 use crate::spans::{from_raw_span, SpanContext, SpanContextX};
@@ -18,7 +18,7 @@ use rustc_interface::interface::Compiler;
 use rustc_session::config::ErrorOutputType;
 
 use vir::messages::{
-    message, note, note_bare, warning_bare, Message, MessageLabel, MessageLevel, MessageX, ToAny,
+    message, note, note_bare, warning, warning_bare, Message, MessageLabel, MessageLevel, MessageX, ToAny
 };
 
 use num_format::{Locale, ToFormattedString};
@@ -30,7 +30,7 @@ use rustc_span::Span;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::Write;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vir::context::{FuncCallGraphLogFiles, GlobalCtx};
@@ -560,7 +560,7 @@ impl Verifier {
             #[cfg(not(feature = "axiom-usage-info"))]
             ValidityResult::Valid() => {}
             ValidityResult::TypeError(err) => {
-                util::PANIC_ON_DROP_VEC.store(false, std::sync::atomic::Ordering::SeqCst);
+                util::PANIC_ON_DROP_VEC.store(false, Ordering::SeqCst);
                 panic!("internal error: ill-typed AIR code: {}", err)
             }
             _ => panic!("internal error: decls should not generate queries ({:?})", result),
@@ -788,7 +788,7 @@ impl Verifier {
                     break;
                 }
                 ValidityResult::TypeError(err) => {
-                    util::PANIC_ON_DROP_VEC.store(false, std::sync::atomic::Ordering::SeqCst);
+                    util::PANIC_ON_DROP_VEC.store(false, Ordering::SeqCst);
                     panic!("internal error: generated ill-typed AIR code: {}", err);
                 }
                 ValidityResult::Canceled => {
@@ -903,7 +903,7 @@ impl Verifier {
                     bucket_time.time_air += time1 - time0;
                 }
                 ValidityResult::UnexpectedOutput(err) => {
-                    util::PANIC_ON_DROP_VEC.store(false, std::sync::atomic::Ordering::SeqCst);
+                    util::PANIC_ON_DROP_VEC.store(false, Ordering::SeqCst);
                     panic!("unexpected output from solver: {}", err);
                 }
             }
@@ -2559,15 +2559,30 @@ impl Verifier {
             return Ok(false);
         }
 
-        let here = self.args.here_loc.as_ref().cloned().map(|(path, row, col)| {
-            let real = rustc_span::FileName::Real(rustc_span::RealFileName::LocalPath(path));
-            let file = tcx.sess.source_map().get_source_file(&real).unwrap();
+        fn handle_here_placement<'tcx>(
+            path: &std::path::Path,
+            row: usize,
+            col: u32,
+            tcx: &TyCtxt<'tcx>,
+            diagnostics: &impl air::messages::Diagnostics,
+        ) -> Option<Arc<HerePlacement>> {
+            let real = rustc_span::FileName::Real(rustc_span::RealFileName::LocalPath(path.into()));
+            let Some(file) = tcx.sess.source_map().get_source_file(&real) else {
+                let warn = warning_bare(format!("path given by `--here` not found: {path:?}"));
+                diagnostics.report_now(&warn.to_any());
+                return None;
+            };
+
             let line = file.line_bounds(row);
             let off = std::cmp::min(line.start.0 + col, line.end.0 - 1);
             let pos = rustc_span::BytePos(off);
             let ctxt = rustc_span::hygiene::SyntaxContext::root();
             let span = rustc_span::Span::new(pos, pos, ctxt, None);
-            Arc::new((span, AtomicBool::new(false), AtomicBool::new(false)))
+            Some(Arc::new(HerePlacement::new(span)))
+        }
+
+        let here = self.args.here_loc.as_ref().and_then(|(path, row, col)| {
+            handle_here_placement(&path, *row, *col, &tcx, diagnostics)
         });
 
         let hir = tcx.hir();
@@ -2638,7 +2653,7 @@ impl Verifier {
         });
         let multi_crate = self.args.export.is_some() || import_len > 0 || self.args.use_crate_name;
         crate::rust_to_vir_base::MULTI_CRATE
-            .with(|m| m.store(multi_crate, std::sync::atomic::Ordering::Relaxed));
+            .with(|m| m.store(multi_crate, Ordering::Relaxed));
 
         let ctxt_diagnostics = ctxt.diagnostics.clone();
         let map_err_diagnostics =
@@ -2649,6 +2664,14 @@ impl Verifier {
         let (vir_crate, item_to_module_map) =
             crate::rust_to_vir::crate_to_vir(&mut ctxt, &other_vir_crates)
                 .map_err(map_err_diagnostics)?;
+
+        if let Some(here) = &ctxt.here {
+            if !here.found.load(Ordering::Relaxed) {
+                let span =  crate::spans::err_air_span(here.span);
+                let warn = warning(&span, "failed to place `--here` location in the source code");
+                diagnostics.report_now(&warn.to_any());
+            }
+        }
 
         let time2 = Instant::now();
         let vir_crate = vir::ast_sort::sort_krate(&vir_crate);

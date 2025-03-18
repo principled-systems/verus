@@ -564,12 +564,21 @@ pub fn parse_args_with_imports(
         }
     }
 
-    let here_loc = matches.opt_str(OPT_HERE).and_then(|s| {
+    fn parse_here_arg(s: String) -> Option<(std::path::PathBuf, usize, u32)> {
         let mut parts = s.split(':');
-        let file = std::path::PathBuf::from_str(parts.next().unwrap()).unwrap();
-        let line = parts.next().unwrap().parse::<usize>().unwrap().checked_sub(1).unwrap();
-        let col = parts.next().unwrap().parse::<u32>().unwrap().checked_sub(1).unwrap();
+        let file = std::path::PathBuf::from_str(parts.next()?).ok()?;
+        let line = parts.next()?.parse::<usize>().ok()?.checked_sub(1)?;
+        let col = parts.next()?.parse::<u32>().ok()?.checked_sub(1)?;
         Some((file, line, col))
+    }
+
+    let here_loc = matches.opt_str(OPT_HERE).and_then(|s| {
+        let parsed = parse_here_arg(s);
+        if parsed.is_none() {
+            eprintln!("Warning: invalid --{} argument", OPT_HERE);
+        }
+
+        parsed
     });
 
     let args = ArgsX {

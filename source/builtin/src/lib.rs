@@ -355,6 +355,7 @@ pub fn use_type_invariant<A>(_a: A) {
 #[cfg(verus_keep_ghost)]
 #[rustc_diagnostic_item = "verus::builtin::here_internal"]
 #[verifier::proof]
+#[track_caller]
 pub fn here_internal() {
     unimplemented!();
 }

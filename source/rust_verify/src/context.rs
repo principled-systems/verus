@@ -18,6 +18,20 @@ pub struct ErasureInfo {
     pub(crate) ignored_functions: Vec<(rustc_span::def_id::DefId, SpanData)>,
 }
 
+pub struct HerePlacement {
+    pub(crate) span: rustc_span::Span,
+    pub(crate) found: AtomicBool,
+    pub(crate) done: AtomicBool,
+}
+
+impl HerePlacement {
+    pub fn new(span: rustc_span::Span) -> Self {
+        let found = AtomicBool::new(false);
+        let done = AtomicBool::new(false);
+        Self { span, found, done }
+    }
+}
+
 type ErasureInfoRef = std::rc::Rc<std::cell::RefCell<ErasureInfo>>;
 
 pub type Context<'tcx> = Arc<ContextX<'tcx>>;
@@ -34,7 +48,7 @@ pub struct ContextX<'tcx> {
     pub(crate) arch_word_bits: Option<vir::ast::ArchWordBits>,
     pub(crate) crate_name: Ident,
     pub(crate) vstd_crate_name: Ident,
-    pub(crate) here: Option<Arc<(rustc_span::Span, AtomicBool, AtomicBool)>>,
+    pub(crate) here: Option<Arc<HerePlacement>>,
 }
 
 #[derive(Clone)]

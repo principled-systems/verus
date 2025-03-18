@@ -653,19 +653,18 @@ pub(crate) fn block_to_vir<'tcx>(
 ) -> Result<vir::ast::Expr, VirErr> {
     use std::sync::atomic::Ordering::Relaxed;
 
-    let mut here = bctx.ctxt.here.as_deref().filter(|(here_span, enter_flag, place_flag)| {
-        if place_flag.load(Relaxed) {
+    let mut here_opt = bctx.ctxt.here.as_deref().filter(|here| {
+        if here.done.load(Relaxed) {
             return false;
         }
 
-        if here_span.hi() < span.lo() && !enter_flag.load(Relaxed) {
-            eprintln!("error: invalid `--here` placement");
-            place_flag.store(true, Relaxed);
+        if here.span.hi() < span.lo() && !here.found.load(Relaxed) {
+            here.done.store(true, Relaxed);
             return false;
         }
 
-        if span.contains(*here_span) {
-            enter_flag.store(true, Relaxed);
+        if span.contains(here.span) {
+            here.found.store(true, Relaxed);
             return true;
         }
 
@@ -676,16 +675,16 @@ pub(crate) fn block_to_vir<'tcx>(
     let mut stmts_iter = block.stmts.iter();
 
     loop {
-        if let Some((here_span, _, flag)) = here {
+        if let Some(here) = here_opt {
             if let Some(stmt) = stmts_iter.clone().next() {
-                if here_span.lo() < stmt.span.lo() && !flag.load(Relaxed) {
-                    let typ = Arc::new(TypX::Bool);
-                    let expr = bctx.spanned_typed_new(*here_span, &typ, ExprX::Here {});
-                    let stmt = bctx.spanned_new(*here_span, StmtX::Expr(expr));
+                if here.span.lo() < stmt.span.lo() && !here.done.load(Relaxed) {
+                    let typ = vir::ast_util::mk_tuple_typ(&Default::default());
+                    let expr = bctx.spanned_typed_new(here.span, &typ, ExprX::Here {});
+                    let stmt = bctx.spanned_new(here.span, StmtX::Expr(expr));
                     vir_stmts.push(stmt);
 
-                    here = None;
-                    flag.store(true, Relaxed);
+                    here.done.store(true, Relaxed);
+                    here_opt = None;
                 }
             }
         }
@@ -701,14 +700,14 @@ pub(crate) fn block_to_vir<'tcx>(
         modifier = ExprModifier { deref_mut: false, ..modifier };
     }
 
-    if let Some((here_span, _, flag)) = here {
-        if !flag.load(Relaxed) {
-            let typ = Arc::new(TypX::Bool);
-            let expr = bctx.spanned_typed_new(*here_span, &typ, ExprX::Here {});
-            let stmt = bctx.spanned_new(*here_span, StmtX::Expr(expr));
+    if let Some(here) = here_opt {
+        if !here.done.load(Relaxed) {
+            let typ = vir::ast_util::mk_tuple_typ(&Default::default());
+            let expr = bctx.spanned_typed_new(here.span, &typ, ExprX::Here {});
+            let stmt = bctx.spanned_new(here.span, StmtX::Expr(expr));
             vir_stmts.push(stmt);
 
-            flag.store(true, Relaxed);
+            here.done.store(true, Relaxed);
         }
     }
 
