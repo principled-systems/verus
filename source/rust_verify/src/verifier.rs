@@ -2574,6 +2574,12 @@ impl Verifier {
                 return None;
             };
 
+            if row >= file.count_lines() {
+                let warn = warning_bare("location given by `--here` past the end of the file");
+                diagnostics.report_now(&warn.to_any());
+                return None;
+            }
+
             let line = file.line_bounds(row);
             let off = std::cmp::min(line.start.0 + col, line.end.0 - 1);
             let pos = rustc_span::BytePos(off);

@@ -1523,12 +1523,7 @@ fn check_expr_handle_mut_arg(
             }
             Ok(mode)
         }
-        ExprX::Here { .. } => {
-            // if ctxt.check_ghost_blocks && typing.block_ghostness == Ghost::Exec {
-            //     return Err(error(&expr.span, "cannot use here in exec mode"));
-            // }
-            Ok(Mode::Exec)
-        }
+        ExprX::Here { .. } => Ok(outer_mode),
     };
     Ok((mode?, None))
 }
