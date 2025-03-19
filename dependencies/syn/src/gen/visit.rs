@@ -485,6 +485,9 @@ pub trait Visit<'ast> {
     fn visit_global_size_of(&mut self, i: &'ast crate::GlobalSizeOf) {
         visit_global_size_of(self, i);
     }
+    fn visit_here(&mut self, i: &'ast crate::Here) {
+        visit_here(self, i);
+    }
     fn visit_ident(&mut self, i: &'ast proc_macro2::Ident) {
         visit_ident(self, i);
     }
@@ -676,6 +679,9 @@ pub trait Visit<'ast> {
     #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
     fn visit_local_init(&mut self, i: &'ast crate::LocalInit) {
         visit_local_init(self, i);
+    }
+    fn visit_loop_spec(&mut self, i: &'ast crate::LoopSpec) {
+        visit_loop_spec(self, i);
     }
     #[cfg(any(feature = "derive", feature = "full"))]
     #[cfg_attr(docsrs, doc(cfg(any(feature = "derive", feature = "full"))))]
@@ -1842,6 +1848,9 @@ where
         crate::Expr::GetField(_binding_0) => {
             v.visit_expr_get_field(_binding_0);
         }
+        crate::Expr::Here(_binding_0) => {
+            v.visit_here(_binding_0);
+        }
     }
 }
 #[cfg(feature = "full")]
@@ -2851,6 +2860,17 @@ where
     skip!(node.eq_token);
     v.visit_expr_lit(&node.expr_lit);
 }
+pub fn visit_here<'ast, V>(v: &mut V, node: &'ast crate::Here)
+where
+    V: Visit<'ast> + ?Sized,
+{
+    for it in &node.attrs {
+        v.visit_attribute(it);
+    }
+    skip!(node.here_token);
+    skip!(node.angle_token);
+    skip!(node.paren_token);
+}
 pub fn visit_ident<'ast, V>(v: &mut V, node: &'ast proc_macro2::Ident)
 where
     V: Visit<'ast> + ?Sized,
@@ -3557,6 +3577,27 @@ where
     if let Some(it) = &node.diverge {
         skip!((it).0);
         v.visit_expr(&*(it).1);
+    }
+}
+pub fn visit_loop_spec<'ast, V>(v: &mut V, node: &'ast crate::LoopSpec)
+where
+    V: Visit<'ast> + ?Sized,
+{
+    if let Some(it) = &node.iter_name {
+        v.visit_ident(&(it).0);
+        skip!((it).1);
+    }
+    if let Some(it) = &node.invariants {
+        v.visit_invariant(it);
+    }
+    if let Some(it) = &node.invariant_except_breaks {
+        v.visit_invariant_except_break(it);
+    }
+    if let Some(it) = &node.ensures {
+        v.visit_ensures(it);
+    }
+    if let Some(it) = &node.decreases {
+        v.visit_decreases(it);
     }
 }
 #[cfg(any(feature = "derive", feature = "full"))]

@@ -689,9 +689,7 @@ pub(crate) fn block_to_vir<'tcx>(
             }
         }
 
-        let Some(mut some_stmts) = stmts_to_vir(bctx, &mut stmts_iter)? else {
-            break
-        };
+        let Some(mut some_stmts) = stmts_to_vir(bctx, &mut stmts_iter)? else { break };
 
         vir_stmts.append(&mut some_stmts);
     }

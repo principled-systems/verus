@@ -464,6 +464,7 @@ impl Clone for crate::Expr {
             crate::Expr::Has(v0) => crate::Expr::Has(v0.clone()),
             crate::Expr::Matches(v0) => crate::Expr::Matches(v0.clone()),
             crate::Expr::GetField(v0) => crate::Expr::GetField(v0.clone()),
+            crate::Expr::Here(v0) => crate::Expr::Here(v0.clone()),
             #[cfg(not(feature = "full"))]
             _ => unreachable!(),
         }
@@ -1280,6 +1281,17 @@ impl Clone for crate::GlobalSizeOf {
         }
     }
 }
+#[cfg_attr(docsrs, doc(cfg(feature = "clone-impls")))]
+impl Clone for crate::Here {
+    fn clone(&self) -> Self {
+        crate::Here {
+            attrs: self.attrs.clone(),
+            here_token: self.here_token.clone(),
+            angle_token: self.angle_token.clone(),
+            paren_token: self.paren_token.clone(),
+        }
+    }
+}
 #[cfg(feature = "full")]
 #[cfg_attr(docsrs, doc(cfg(feature = "clone-impls")))]
 impl Clone for crate::ImplItem {
@@ -1796,6 +1808,18 @@ impl Clone for crate::LocalInit {
             eq_token: self.eq_token.clone(),
             expr: self.expr.clone(),
             diverge: self.diverge.clone(),
+        }
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "clone-impls")))]
+impl Clone for crate::LoopSpec {
+    fn clone(&self) -> Self {
+        crate::LoopSpec {
+            iter_name: self.iter_name.clone(),
+            invariants: self.invariants.clone(),
+            invariant_except_breaks: self.invariant_except_breaks.clone(),
+            ensures: self.ensures.clone(),
+            decreases: self.decreases.clone(),
         }
     }
 }

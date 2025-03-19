@@ -761,6 +761,10 @@ impl Hash for crate::Expr {
                 state.write_u8(50u8);
                 v0.hash(state);
             }
+            crate::Expr::Here(v0) => {
+                state.write_u8(51u8);
+                v0.hash(state);
+            }
             #[cfg(not(feature = "full"))]
             _ => unreachable!(),
         }
@@ -1667,6 +1671,15 @@ impl Hash for crate::GlobalSizeOf {
         self.expr_lit.hash(state);
     }
 }
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
+impl Hash for crate::Here {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.attrs.hash(state);
+    }
+}
 #[cfg(feature = "full")]
 #[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
 impl Hash for crate::ImplItem {
@@ -2279,6 +2292,19 @@ impl Hash for crate::LocalInit {
     {
         self.expr.hash(state);
         self.diverge.hash(state);
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
+impl Hash for crate::LoopSpec {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.iter_name.hash(state);
+        self.invariants.hash(state);
+        self.invariant_except_breaks.hash(state);
+        self.ensures.hash(state);
+        self.decreases.hash(state);
     }
 }
 #[cfg(any(feature = "derive", feature = "full"))]

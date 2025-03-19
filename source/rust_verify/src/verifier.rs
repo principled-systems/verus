@@ -18,7 +18,8 @@ use rustc_interface::interface::Compiler;
 use rustc_session::config::ErrorOutputType;
 
 use vir::messages::{
-    message, note, note_bare, warning, warning_bare, Message, MessageLabel, MessageLevel, MessageX, ToAny
+    message, note, note_bare, warning, warning_bare, Message, MessageLabel, MessageLevel, MessageX,
+    ToAny,
 };
 
 use num_format::{Locale, ToFormattedString};
@@ -2652,8 +2653,7 @@ impl Verifier {
             here,
         });
         let multi_crate = self.args.export.is_some() || import_len > 0 || self.args.use_crate_name;
-        crate::rust_to_vir_base::MULTI_CRATE
-            .with(|m| m.store(multi_crate, Ordering::Relaxed));
+        crate::rust_to_vir_base::MULTI_CRATE.with(|m| m.store(multi_crate, Ordering::Relaxed));
 
         let ctxt_diagnostics = ctxt.diagnostics.clone();
         let map_err_diagnostics =
@@ -2667,7 +2667,7 @@ impl Verifier {
 
         if let Some(here) = &ctxt.here {
             if !here.found.load(Ordering::Relaxed) {
-                let span =  crate::spans::err_air_span(here.span);
+                let span = crate::spans::err_air_span(here.span);
                 let warn = warning(&span, "failed to place `--here` location in the source code");
                 diagnostics.report_now(&warn.to_any());
             }

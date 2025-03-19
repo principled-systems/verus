@@ -360,13 +360,6 @@ pub fn here_internal() {
     unimplemented!();
 }
 
-#[macro_export]
-macro_rules! here {
-    () => {
-        here_internal()
-    };
-}
-
 //
 // Ghost, Tracked
 //

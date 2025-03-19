@@ -1335,6 +1335,11 @@
           {
             "syn": "ExprGetField"
           }
+        ],
+        "Here": [
+          {
+            "syn": "Here"
+          }
         ]
       }
     },
@@ -3272,6 +3277,28 @@
       }
     },
     {
+      "ident": "Here",
+      "features": {
+        "any": []
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
+          }
+        },
+        "here_token": {
+          "token": "Here"
+        },
+        "angle_token": {
+          "token": "Gt"
+        },
+        "paren_token": {
+          "group": "Paren"
+        }
+      }
+    },
+    {
       "ident": "ImplItem",
       "features": {
         "any": [
@@ -4650,6 +4677,46 @@
                 }
               }
             ]
+          }
+        }
+      }
+    },
+    {
+      "ident": "LoopSpec",
+      "features": {
+        "any": []
+      },
+      "fields": {
+        "iter_name": {
+          "option": {
+            "tuple": [
+              {
+                "proc_macro2": "Ident"
+              },
+              {
+                "token": "FatArrow"
+              }
+            ]
+          }
+        },
+        "invariants": {
+          "option": {
+            "syn": "Invariant"
+          }
+        },
+        "invariant_except_breaks": {
+          "option": {
+            "syn": "InvariantExceptBreak"
+          }
+        },
+        "ensures": {
+          "option": {
+            "syn": "Ensures"
+          }
+        },
+        "decreases": {
+          "option": {
+            "syn": "Decreases"
           }
         }
       }
@@ -7311,6 +7378,7 @@
     "Global": "global",
     "Gt": ">",
     "Has": "has",
+    "Here": "here",
     "Hide": "hide",
     "If": "if",
     "Impl": "impl",

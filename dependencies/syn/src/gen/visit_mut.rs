@@ -493,6 +493,9 @@ pub trait VisitMut {
     fn visit_global_size_of_mut(&mut self, i: &mut crate::GlobalSizeOf) {
         visit_global_size_of_mut(self, i);
     }
+    fn visit_here_mut(&mut self, i: &mut crate::Here) {
+        visit_here_mut(self, i);
+    }
     fn visit_ident_mut(&mut self, i: &mut proc_macro2::Ident) {
         visit_ident_mut(self, i);
     }
@@ -690,6 +693,9 @@ pub trait VisitMut {
     #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
     fn visit_local_init_mut(&mut self, i: &mut crate::LocalInit) {
         visit_local_init_mut(self, i);
+    }
+    fn visit_loop_spec_mut(&mut self, i: &mut crate::LoopSpec) {
+        visit_loop_spec_mut(self, i);
     }
     #[cfg(any(feature = "derive", feature = "full"))]
     #[cfg_attr(docsrs, doc(cfg(any(feature = "derive", feature = "full"))))]
@@ -1834,6 +1840,9 @@ where
         crate::Expr::GetField(_binding_0) => {
             v.visit_expr_get_field_mut(_binding_0);
         }
+        crate::Expr::Here(_binding_0) => {
+            v.visit_here_mut(_binding_0);
+        }
     }
 }
 #[cfg(feature = "full")]
@@ -2734,6 +2743,15 @@ where
     skip!(node.eq_token);
     v.visit_expr_lit_mut(&mut node.expr_lit);
 }
+pub fn visit_here_mut<V>(v: &mut V, node: &mut crate::Here)
+where
+    V: VisitMut + ?Sized,
+{
+    v.visit_attributes_mut(&mut node.attrs);
+    skip!(node.here_token);
+    skip!(node.angle_token);
+    skip!(node.paren_token);
+}
 pub fn visit_ident_mut<V>(v: &mut V, node: &mut proc_macro2::Ident)
 where
     V: VisitMut + ?Sized,
@@ -3395,6 +3413,27 @@ where
     if let Some(it) = &mut node.diverge {
         skip!((it).0);
         v.visit_expr_mut(&mut *(it).1);
+    }
+}
+pub fn visit_loop_spec_mut<V>(v: &mut V, node: &mut crate::LoopSpec)
+where
+    V: VisitMut + ?Sized,
+{
+    if let Some(it) = &mut node.iter_name {
+        v.visit_ident_mut(&mut (it).0);
+        skip!((it).1);
+    }
+    if let Some(it) = &mut node.invariants {
+        v.visit_invariant_mut(it);
+    }
+    if let Some(it) = &mut node.invariant_except_breaks {
+        v.visit_invariant_except_break_mut(it);
+    }
+    if let Some(it) = &mut node.ensures {
+        v.visit_ensures_mut(it);
+    }
+    if let Some(it) = &mut node.decreases {
+        v.visit_decreases_mut(it);
     }
 }
 #[cfg(any(feature = "derive", feature = "full"))]

@@ -499,6 +499,7 @@ impl PartialEq for crate::Expr {
             (crate::Expr::GetField(self0), crate::Expr::GetField(other0)) => {
                 self0 == other0
             }
+            (crate::Expr::Here(self0), crate::Expr::Here(other0)) => self0 == other0,
             _ => false,
         }
     }
@@ -1283,6 +1284,14 @@ impl PartialEq for crate::GlobalSizeOf {
         self.type_ == other.type_ && self.expr_lit == other.expr_lit
     }
 }
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
+impl Eq for crate::Here {}
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
+impl PartialEq for crate::Here {
+    fn eq(&self, other: &Self) -> bool {
+        self.attrs == other.attrs
+    }
+}
 #[cfg(feature = "full")]
 #[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
 impl Eq for crate::ImplItem {}
@@ -1762,6 +1771,16 @@ impl Eq for crate::LocalInit {}
 impl PartialEq for crate::LocalInit {
     fn eq(&self, other: &Self) -> bool {
         self.expr == other.expr && self.diverge == other.diverge
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
+impl Eq for crate::LoopSpec {}
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
+impl PartialEq for crate::LoopSpec {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter_name == other.iter_name && self.invariants == other.invariants
+            && self.invariant_except_breaks == other.invariant_except_breaks
+            && self.ensures == other.ensures && self.decreases == other.decreases
     }
 }
 #[cfg(any(feature = "derive", feature = "full"))]

@@ -346,6 +346,15 @@ ast_struct! {
 }
 
 ast_struct! {
+    pub struct Here {
+        pub attrs: Vec<Attribute>,
+        pub here_token: Token![here],
+        pub angle_token: Token![>],
+        pub paren_token: token::Paren,
+    }
+}
+
+ast_struct! {
     pub struct View {
         pub attrs: Vec<Attribute>,
         pub expr: Box<Expr>,
@@ -1279,6 +1288,26 @@ pub mod parsing {
     }
 
     #[cfg_attr(doc_cfg, doc(cfg(feature = "parsing")))]
+    impl Parse for Here {
+        fn parse(input: ParseStream) -> Result<Self> {
+            let attrs = Vec::new();
+            let here_token: Token![here] = input.parse()?;
+            let angle_token: Token![>] = input.parse()?;
+            let content;
+            let paren_token = parenthesized!(content in input);
+            if !content.is_empty() {
+                return Err(content.error("expected `)`"));
+            }
+            Ok(Here {
+                attrs,
+                here_token,
+                angle_token,
+                paren_token,
+            })
+        }
+    }
+
+    #[cfg_attr(doc_cfg, doc(cfg(feature = "parsing")))]
     impl Parse for ItemBroadcastGroup {
         fn parse(input: ParseStream) -> Result<Self> {
             let attrs = Vec::new();
@@ -1886,6 +1915,16 @@ mod printing {
             self.invariants.to_tokens(tokens);
             self.unwind.to_tokens(tokens);
             self.semi.to_tokens(tokens);
+        }
+    }
+
+    #[cfg_attr(doc_cfg, doc(cfg(feature = "printing")))]
+    impl ToTokens for Here {
+        fn to_tokens(&self, tokens: &mut TokenStream) {
+            outer_attrs_to_tokens(&self.attrs, tokens);
+            self.here_token.to_tokens(tokens);
+            self.angle_token.to_tokens(tokens);
+            self.paren_token.surround(tokens, |_| {});
         }
     }
 }

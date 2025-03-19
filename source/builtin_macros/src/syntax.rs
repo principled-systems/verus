@@ -2698,6 +2698,20 @@ impl Visitor {
         true
     }
 
+    fn handle_here(&mut self, expr: &mut Expr) -> bool {
+        let Expr::Here(syn_verus::Here { attrs, here_token, .. }) = expr else {
+            return false;
+        };
+
+        self.inside_ghost += 1;
+        // self.visit_expr_with_arith(expr, InsideArith::None);
+        *expr = quote_verbatim!(builtin, here_token.span, attrs => here_internal());
+        self.inside_ghost -= 1;
+        self.auto_proof_block(expr, expr.span());
+
+        true
+    }
+
     fn add_loop_specs(
         &mut self,
         stmts: &mut Vec<Stmt>,
@@ -3116,6 +3130,7 @@ impl VisitMut for Visitor {
             || self.handle_unary_ops(expr)
             || self.handle_big_and_big_or(expr)
             || self.handle_spec_operators(expr)
+            || self.handle_here(expr)
         {
             return;
         }

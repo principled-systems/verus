@@ -732,6 +732,11 @@ impl Debug for crate::Expr {
             crate::Expr::Has(v0) => v0.debug(formatter, "Has"),
             crate::Expr::Matches(v0) => v0.debug(formatter, "Matches"),
             crate::Expr::GetField(v0) => v0.debug(formatter, "GetField"),
+            crate::Expr::Here(v0) => {
+                let mut formatter = formatter.debug_tuple("Here");
+                formatter.field(v0);
+                formatter.finish()
+            }
             #[cfg(not(feature = "full"))]
             _ => unreachable!(),
         }
@@ -1906,6 +1911,17 @@ impl Debug for crate::GlobalSizeOf {
         formatter.finish()
     }
 }
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
+impl Debug for crate::Here {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        let mut formatter = formatter.debug_struct("Here");
+        formatter.field("attrs", &self.attrs);
+        formatter.field("here_token", &self.here_token);
+        formatter.field("angle_token", &self.angle_token);
+        formatter.field("paren_token", &self.paren_token);
+        formatter.finish()
+    }
+}
 #[cfg(feature = "full")]
 #[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
 impl Debug for crate::ImplItem {
@@ -2591,6 +2607,18 @@ impl Debug for crate::LocalInit {
         formatter.field("eq_token", &self.eq_token);
         formatter.field("expr", &self.expr);
         formatter.field("diverge", &self.diverge);
+        formatter.finish()
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
+impl Debug for crate::LoopSpec {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        let mut formatter = formatter.debug_struct("LoopSpec");
+        formatter.field("iter_name", &self.iter_name);
+        formatter.field("invariants", &self.invariants);
+        formatter.field("invariant_except_breaks", &self.invariant_except_breaks);
+        formatter.field("ensures", &self.ensures);
+        formatter.field("decreases", &self.decreases);
         formatter.finish()
     }
 }

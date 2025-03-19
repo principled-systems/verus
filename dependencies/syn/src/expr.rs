@@ -19,7 +19,6 @@ use crate::path::{AngleBracketedGenericArguments, Path, QSelf};
 use crate::punctuated::Punctuated;
 #[cfg(feature = "full")]
 use crate::stmt::Block;
-use crate::token;
 #[cfg(feature = "full")]
 use crate::ty::ReturnType;
 use crate::ty::Type;
@@ -27,6 +26,7 @@ use crate::verus::{
     Assert, AssertForall, Assume, BigAnd, BigOr, Decreases, Ensures, ExprGetField, ExprHas, ExprIs,
     ExprMatches, Invariant, InvariantEnsures, InvariantExceptBreak, Requires, RevealHide, View,
 };
+use crate::{token, Here};
 use proc_macro2::{Span, TokenStream};
 #[cfg(feature = "printing")]
 use quote::IdentFragment;
@@ -262,6 +262,7 @@ ast_enum_of_structs! {
         Has(ExprHas),
         Matches(ExprMatches),
         GetField(ExprGetField),
+        Here(Here),
 
         // For testing exhaustiveness in downstream code, use the following idiom:
         //
@@ -1004,7 +1005,8 @@ impl Expr {
             | Expr::Is(ExprIs { attrs, .. })
             | Expr::Has(ExprHas { attrs, .. })
             | Expr::GetField(ExprGetField { attrs, .. })
-            | Expr::Matches(ExprMatches { attrs, .. }) => mem::replace(attrs, new),
+            | Expr::Matches(ExprMatches { attrs, .. })
+            | Expr::Here(Here { attrs, .. }) => mem::replace(attrs, new),
             Expr::Verbatim(_) => Vec::new(),
             Expr::BigAnd(_) => Vec::new(),
             Expr::BigOr(_) => Vec::new(),
@@ -1339,6 +1341,8 @@ pub(crate) mod parsing {
             || input.peek(Token![hide])
         {
             Expr::RevealHide(input.parse()?)
+        } else if input.peek(Token![here]) && input.peek2(Token![>]) {
+            Expr::Here(input.parse()?)
         } else if input.peek(Token![match]) {
             Expr::Match(input.parse()?)
         } else if input.peek(Token![try]) && input.peek2(token::Brace) {
@@ -1978,6 +1982,8 @@ pub(crate) mod parsing {
             || input.peek(Token![hide])
         {
             input.parse().map(Expr::RevealHide)
+        } else if input.peek(Token![here]) && input.peek2(Token![>]) {
+            input.parse().map(Expr::Here)
         } else if input.peek(Token![match]) {
             input.parse().map(Expr::Match)
         } else if input.peek(Token![yield]) {
@@ -3505,6 +3511,7 @@ pub(crate) mod printing {
             Expr::Has(e) => e.to_tokens(tokens),
             Expr::Is(e) => e.to_tokens(tokens),
             Expr::Matches(e) => e.to_tokens(tokens),
+            Expr::Here(e) => e.to_tokens(tokens),
 
             #[cfg(not(feature = "full"))]
             _ => unreachable!(),

@@ -58,6 +58,7 @@ a.struct[title="struct syn::token::Ghost"],
 a.struct[title="struct syn::token::Global"],
 a.struct[title="struct syn::token::Gt"],
 a.struct[title="struct syn::token::Has"],
+a.struct[title="struct syn::token::Here"],
 a.struct[title="struct syn::token::Hide"],
 a.struct[title="struct syn::token::If"],
 a.struct[title="struct syn::token::Impl"],
@@ -216,6 +217,7 @@ a.struct[title="struct syn::token::Ghost"]::before,
 a.struct[title="struct syn::token::Global"]::before,
 a.struct[title="struct syn::token::Gt"]::before,
 a.struct[title="struct syn::token::Has"]::before,
+a.struct[title="struct syn::token::Here"]::before,
 a.struct[title="struct syn::token::Hide"]::before,
 a.struct[title="struct syn::token::If"]::before,
 a.struct[title="struct syn::token::Impl"]::before,
@@ -553,6 +555,10 @@ a.struct[title="struct syn::token::Gt"]::before {
 
 a.struct[title="struct syn::token::Has"]::before {
 	content: "Token![has]";
+}
+
+a.struct[title="struct syn::token::Here"]::before {
+	content: "Token![here]";
 }
 
 a.struct[title="struct syn::token::Hide"]::before {
@@ -1054,6 +1060,7 @@ a.struct[title="struct syn::token::Ge"]::after,
 a.struct[title="struct syn::token::Ghost"]::after,
 a.struct[title="struct syn::token::Global"]::after,
 a.struct[title="struct syn::token::Has"]::after,
+a.struct[title="struct syn::token::Here"]::after,
 a.struct[title="struct syn::token::Hide"]::after,
 a.struct[title="struct syn::token::If"]::after,
 a.struct[title="struct syn::token::Impl"]::after,

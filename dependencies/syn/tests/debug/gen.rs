@@ -1700,6 +1700,13 @@ impl Debug for Lite<syn::Expr> {
                 formatter.field("member", Lite(&_val.member));
                 formatter.finish()
             }
+            syn::Expr::Here(_val) => {
+                formatter.write_str("Expr::Here")?;
+                formatter.write_str("(")?;
+                Debug::fmt(Lite(_val), formatter)?;
+                formatter.write_str(")")?;
+                Ok(())
+            }
         }
     }
 }
@@ -3135,6 +3142,15 @@ impl Debug for Lite<syn::GlobalSizeOf> {
         formatter.finish()
     }
 }
+impl Debug for Lite<syn::Here> {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        let mut formatter = formatter.debug_struct("Here");
+        if !self.value.attrs.is_empty() {
+            formatter.field("attrs", Lite(&self.value.attrs));
+        }
+        formatter.finish()
+    }
+}
 impl Debug for Lite<syn::ImplItem> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match &self.value {
@@ -4363,6 +4379,82 @@ impl Debug for Lite<syn::LocalInit> {
                 }
             }
             formatter.field("diverge", Print::ref_cast(val));
+        }
+        formatter.finish()
+    }
+}
+impl Debug for Lite<syn::LoopSpec> {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        let mut formatter = formatter.debug_struct("LoopSpec");
+        if let Some(val) = &self.value.iter_name {
+            #[derive(RefCast)]
+            #[repr(transparent)]
+            struct Print((proc_macro2::Ident, syn::token::FatArrow));
+            impl Debug for Print {
+                fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("Some(")?;
+                    Debug::fmt(Lite(&self.0.0), formatter)?;
+                    formatter.write_str(")")?;
+                    Ok(())
+                }
+            }
+            formatter.field("iter_name", Print::ref_cast(val));
+        }
+        if let Some(val) = &self.value.invariants {
+            #[derive(RefCast)]
+            #[repr(transparent)]
+            struct Print(syn::Invariant);
+            impl Debug for Print {
+                fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("Some(")?;
+                    Debug::fmt(Lite(&self.0), formatter)?;
+                    formatter.write_str(")")?;
+                    Ok(())
+                }
+            }
+            formatter.field("invariants", Print::ref_cast(val));
+        }
+        if let Some(val) = &self.value.invariant_except_breaks {
+            #[derive(RefCast)]
+            #[repr(transparent)]
+            struct Print(syn::InvariantExceptBreak);
+            impl Debug for Print {
+                fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("Some(")?;
+                    Debug::fmt(Lite(&self.0), formatter)?;
+                    formatter.write_str(")")?;
+                    Ok(())
+                }
+            }
+            formatter.field("invariant_except_breaks", Print::ref_cast(val));
+        }
+        if let Some(val) = &self.value.ensures {
+            #[derive(RefCast)]
+            #[repr(transparent)]
+            struct Print(syn::Ensures);
+            impl Debug for Print {
+                fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("Some(")?;
+                    Debug::fmt(Lite(&self.0), formatter)?;
+                    formatter.write_str(")")?;
+                    Ok(())
+                }
+            }
+            formatter.field("ensures", Print::ref_cast(val));
+        }
+        if let Some(val) = &self.value.decreases {
+            #[derive(RefCast)]
+            #[repr(transparent)]
+            struct Print(syn::Decreases);
+            impl Debug for Print {
+                fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("Some(")?;
+                    Debug::fmt(Lite(&self.0), formatter)?;
+                    formatter.write_str(")")?;
+                    Ok(())
+                }
+            }
+            formatter.field("decreases", Print::ref_cast(val));
         }
         formatter.finish()
     }
@@ -6900,6 +6992,11 @@ impl Debug for Lite<syn::token::Gt> {
 impl Debug for Lite<syn::token::Has> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("Token![has]")
+    }
+}
+impl Debug for Lite<syn::token::Here> {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("Token![here]")
     }
 }
 impl Debug for Lite<syn::token::Hide> {

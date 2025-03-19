@@ -404,7 +404,8 @@ pub(crate) mod parsing {
                 | Expr::Is(_)
                 | Expr::Has(_)
                 | Expr::Matches(_)
-                | Expr::GetField(_) => break,
+                | Expr::GetField(_)
+                | Expr::Here(_) => break,
             };
         }
         attrs.extend(attr_target.replace_attrs(Vec::new()));

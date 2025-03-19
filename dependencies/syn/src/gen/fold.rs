@@ -513,6 +513,9 @@ pub trait Fold {
     fn fold_global_size_of(&mut self, i: crate::GlobalSizeOf) -> crate::GlobalSizeOf {
         fold_global_size_of(self, i)
     }
+    fn fold_here(&mut self, i: crate::Here) -> crate::Here {
+        fold_here(self, i)
+    }
     fn fold_ident(&mut self, i: proc_macro2::Ident) -> proc_macro2::Ident {
         fold_ident(self, i)
     }
@@ -737,6 +740,9 @@ pub trait Fold {
     #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
     fn fold_local_init(&mut self, i: crate::LocalInit) -> crate::LocalInit {
         fold_local_init(self, i)
+    }
+    fn fold_loop_spec(&mut self, i: crate::LoopSpec) -> crate::LoopSpec {
+        fold_loop_spec(self, i)
     }
     #[cfg(any(feature = "derive", feature = "full"))]
     #[cfg_attr(docsrs, doc(cfg(any(feature = "derive", feature = "full"))))]
@@ -1830,6 +1836,7 @@ where
         crate::Expr::GetField(_binding_0) => {
             crate::Expr::GetField(f.fold_expr_get_field(_binding_0))
         }
+        crate::Expr::Here(_binding_0) => crate::Expr::Here(f.fold_here(_binding_0)),
     }
 }
 #[cfg(feature = "full")]
@@ -2783,6 +2790,17 @@ where
         expr_lit: f.fold_expr_lit(node.expr_lit),
     }
 }
+pub fn fold_here<F>(f: &mut F, node: crate::Here) -> crate::Here
+where
+    F: Fold + ?Sized,
+{
+    crate::Here {
+        attrs: f.fold_attributes(node.attrs),
+        here_token: node.here_token,
+        angle_token: node.angle_token,
+        paren_token: node.paren_token,
+    }
+}
 pub fn fold_ident<F>(f: &mut F, node: proc_macro2::Ident) -> proc_macro2::Ident
 where
     F: Fold + ?Sized,
@@ -3494,6 +3512,19 @@ where
         eq_token: node.eq_token,
         expr: Box::new(f.fold_expr(*node.expr)),
         diverge: (node.diverge).map(|it| ((it).0, Box::new(f.fold_expr(*(it).1)))),
+    }
+}
+pub fn fold_loop_spec<F>(f: &mut F, node: crate::LoopSpec) -> crate::LoopSpec
+where
+    F: Fold + ?Sized,
+{
+    crate::LoopSpec {
+        iter_name: (node.iter_name).map(|it| (f.fold_ident((it).0), (it).1)),
+        invariants: (node.invariants).map(|it| f.fold_invariant(it)),
+        invariant_except_breaks: (node.invariant_except_breaks)
+            .map(|it| f.fold_invariant_except_break(it)),
+        ensures: (node.ensures).map(|it| f.fold_ensures(it)),
+        decreases: (node.decreases).map(|it| f.fold_decreases(it)),
     }
 }
 #[cfg(any(feature = "derive", feature = "full"))]
