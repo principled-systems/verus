@@ -152,6 +152,8 @@ pub fn main() {
         build_test_mode || via_cargo_rebuild_verus_libs,
     );
 
+    dbg!("hi");
+
     let total_time_1 = std::time::Instant::now();
     let total_time = total_time_1 - total_time_0;
 

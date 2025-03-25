@@ -33,7 +33,10 @@ fn run_compiler<'a, 'b>(
         syntax_macro,
         erase_ghost,
     );
-    mk_compiler(&rustc_args, verifier, file_loader).run()
+    dbg!("run compiler");
+    let a = mk_compiler(&rustc_args, verifier, file_loader).run();
+    dbg!("run compiler");
+    a
 }
 
 pub fn is_verifying_entire_crate(verifier: &Verifier) -> bool {
@@ -260,6 +263,9 @@ where
         file_loader: Some(Box::new(file_loader.clone())),
         verus_externs,
     };
+
+    dbg!("hi");
+
     let status = run_compiler(
         rustc_args_verify.clone(),
         true,
@@ -267,6 +273,9 @@ where
         &mut verifier_callbacks,
         Box::new(file_loader.clone()),
     );
+
+    dbg!("hi1");
+
     let VerifierCallbacksEraseMacro {
         verifier,
         rust_start_time,
