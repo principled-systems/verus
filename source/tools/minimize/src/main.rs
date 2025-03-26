@@ -21,6 +21,7 @@ struct Config {
     no_external_by_default: bool,
     delimiters_are_layout: bool,
     permutations_dir: std::path::PathBuf,
+    sample_failures: bool,
 }
 
 fn main() {
@@ -39,6 +40,11 @@ fn main() {
     );
     opts.optflag("", "json", "output as machine-readable json");
     opts.optflag("", "delimiters-are-layout", "consider delimiter-only lines as layout");
+    opts.optflag(
+        "s",
+        "sample-failures",
+        "sample some asserts to uncomment and see if verification time explodes",
+    );
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -73,6 +79,7 @@ fn main() {
         no_external_by_default: matches.opt_present("no-external-by-default"),
         delimiters_are_layout: matches.opt_present("delimiters-are-layout"),
         permutations_dir,
+        sample_failures: matches.opt_present("sample-failures"),
     };
 
     match run(config, &std::path::Path::new(&deps_path)) {
@@ -1508,7 +1515,7 @@ fn process_file(config: Arc<Config>, input_path: &std::path::Path) -> Result<Fil
                     _ => {}
                 }
             }
-            Meta::List(MetaList { path, delimiter: _, tokens }) => {
+            Meta::List(MetaList { path, delimiter: _, tokens: _ }) => {
                 let mut path_iter = path.segments.iter();
                 match (path_iter.next(), path_iter.next()) {
                     (Some(first), None) if first.ident == "cfg_attr" => {
@@ -1689,7 +1696,7 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     let (root_path, files) = get_dependencies(deps_path)?;
 
     if config.permutations_dir.is_dir() {
-        println!("The permutations directory already exists. Do you want to delete it? (y/n): ");
+        eprintln!("The permutations directory already exists. Do you want to delete it? (y/n): ");
         io::stdout().flush().unwrap();
 
         let mut input = String::new();
@@ -1720,8 +1727,66 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     );
 
     // run verus for the first time
-    if let Err(e) = run_verus(&root_path, 7) {
-        return Err(format!("verus failed to verify before minimization: {}", e));
+    let orig_t;
+    match run_verus(&root_path, 7) {
+        Ok(t) => {
+            orig_t = t;
+        }
+        Err((e, _)) => {
+            return Err(format!("verus failed to verify before minimization: {}", e));
+        }
+    }
+
+    if config.sample_failures {
+        let mut max_failure_t = 0;
+
+        let mut all_asserts: Vec<(PathBuf, Lines)> = file_stats
+            .iter()
+            .flat_map(|(file_name, fs)| {
+                fs.asserts.iter().map(|assert| (file_name.clone(), assert.clone()))
+            })
+            .collect();
+        let mut rng = rand::rng();
+        rand::seq::SliceRandom::shuffle(&mut all_asserts[..], &mut rng);
+        let sample_asserts: Vec<_> = all_asserts.into_iter().take(20).collect();
+        println!("sampled {} asserts out of {}", sample_asserts.len(), num_asserts);
+
+        // copy everything into the permutations directory
+        for (path, file_data) in file_stats.iter() {
+            let file_path = config.permutations_dir.join(path);
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent).expect("create directories");
+            }
+            std::fs::write(&file_path, file_data.contents.clone()).expect("write file");
+        }
+
+        let mut max_lines: Option<(&PathBuf, &Lines)> = None;
+
+        for (rel_path, lines) in sample_asserts.iter() {
+            // comment line out
+            println!("commenting out line {:?} in {:?}", lines, root_path.join(rel_path));
+
+            let file_to_mutate = config.permutations_dir.join(rel_path);
+            let _ = comment_lines_out(&file_to_mutate, &lines.to_owned().into());
+
+            // run verus
+            if let Err((_, t)) = run_verus(&config.permutations_dir, 7) {
+                if max_failure_t < t {
+                    max_lines = Some((rel_path, lines));
+                    max_failure_t = t;
+                }
+
+                let _ = uncomment_lines(&file_to_mutate, &lines.to_owned().into());
+            } else {
+                println!("verus succeeded (this shouldn't happen!), reverting");
+                let _ = uncomment_lines(&file_to_mutate, &lines.to_owned().into());
+            }
+        }
+
+        println!("max failure time: {} \noriginal verification time: {}", max_failure_t, orig_t);
+        println!("caused by {} in {}", max_lines.unwrap().1, max_lines.unwrap().0.display());
+
+        return Ok(());
     }
 
     // comment out each assert and run verus
@@ -1860,7 +1925,7 @@ struct JsonRoot {
     times_ms: VerificationTime,
 }
 
-fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<(), String> {
+fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<u32, (String, u32)> {
     let file_path = proj_path.join("lib.rs");
 
     let verus_path = current_dir().unwrap().join("../../target-verus/release/verus");
@@ -1876,17 +1941,18 @@ fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<(), Stri
         .arg(num_threads.to_string())
         .stdout(std::process::Stdio::piped())
         .output()
-        .map_err(|e| format!("failed to run verus: {}", e))?;
+        .map_err(|e| (format!("failed to run verus: {}", e), 0))?;
 
     // print stderr
     // eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
 
     let output: JsonRoot = serde_json::from_slice(&cmd.stdout)
-        .map_err(|e| format!("failed to parse verus output: {}", e))?;
+        .map_err(|e| (format!("failed to parse verus output: {}", e), 0))?;
+
     if output.verification_results.success {
         println!("verus succeeded with time: {}ms", output.times_ms.total);
-        Ok(())
+        Ok(output.times_ms.total)
     } else {
-        Err("verus failed to verify".into())
+        Err(("verus failed to verify".into(), output.times_ms.total))
     }
 }
