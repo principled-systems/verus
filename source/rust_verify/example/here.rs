@@ -1,4 +1,4 @@
-// rust_verify/tests/example.rs expect-failures
+// rust_verify/tests/example.rs expect-errors
 #![allow(unused_imports)]
 use builtin::*;
 use builtin_macros::*;
