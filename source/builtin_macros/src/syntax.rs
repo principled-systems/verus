@@ -2705,7 +2705,7 @@ impl Visitor {
 
         self.inside_ghost += 1;
         // self.visit_expr_with_arith(expr, InsideArith::None);
-        *expr = quote_verbatim!(builtin, here_token.span, attrs => here_internal());
+        *expr = quote_verbatim!(_builtin, here_token.span, attrs => here_internal());
         self.inside_ghost -= 1;
         self.auto_proof_block(expr, expr.span());
 

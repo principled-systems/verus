@@ -302,6 +302,9 @@ pub struct Verifier {
     item_to_module_map: Option<Arc<crate::external::CrateItems>>,
     buckets: HashMap<BucketId, Bucket>,
 
+    here_marker: Option<vir::check_here::HereMarker>,
+    unfocused_fails: u64,
+
     // proof debugging purposes
     expand_flag: bool,
 
@@ -433,6 +436,9 @@ impl Verifier {
             item_to_module_map: None,
             buckets: HashMap::new(),
 
+            here_marker: None,
+            unfocused_fails: 0,
+
             expand_flag: false,
             error_format: None,
         }
@@ -467,6 +473,8 @@ impl Verifier {
             current_crate_modules: self.current_crate_modules.clone(),
             item_to_module_map: self.item_to_module_map.clone(),
             buckets: self.buckets.clone(),
+            here_marker: self.here_marker.clone(),
+            unfocused_fails: self.unfocused_fails,
             expand_flag: self.expand_flag,
             error_format: self.error_format,
         }
@@ -2560,36 +2568,27 @@ impl Verifier {
             return Ok(false);
         }
 
-        fn handle_here_placement<'tcx>(
-            path: &std::path::Path,
-            row: usize,
-            col: u32,
-            tcx: &TyCtxt<'tcx>,
-            diagnostics: &impl air::messages::Diagnostics,
-        ) -> Option<Arc<HerePlacement>> {
-            let real = rustc_span::FileName::Real(rustc_span::RealFileName::LocalPath(path.into()));
-            let Some(file) = tcx.sess.source_map().get_source_file(&real) else {
-                let warn = warning_bare(format!("path given by `--here` not found: {path:?}"));
-                diagnostics.report_now(&warn.to_any());
+        let here_placement = self.args.here_arg.as_ref().and_then(|arg| {
+            let local_path = rustc_span::RealFileName::LocalPath(arg.file.clone());
+            let real = rustc_span::FileName::Real(local_path);
+            let Some(file) = (&tcx).sess.source_map().get_source_file(&real) else {
+                let note = format!("path given by `--here` not found: {:?}", arg.file);
+                diagnostics.report_now(&warning_bare(note).to_any());
                 return None;
             };
 
-            if row >= file.count_lines() {
+            if arg.line >= file.count_lines() {
                 let warn = warning_bare("location given by `--here` past the end of the file");
                 diagnostics.report_now(&warn.to_any());
                 return None;
             }
 
-            let line = file.line_bounds(row);
-            let off = std::cmp::min(line.start.0 + col, line.end.0 - 1);
+            let line = file.line_bounds(arg.line);
+            let off = std::cmp::min(line.start.0 + arg.col, line.end.0 - 1);
             let pos = rustc_span::BytePos(off);
             let ctxt = rustc_span::hygiene::SyntaxContext::root();
             let span = rustc_span::Span::new(pos, pos, ctxt, None);
             Some(Arc::new(HerePlacement::new(span)))
-        }
-
-        let here = self.args.here_loc.as_ref().and_then(|(path, row, col)| {
-            handle_here_placement(&path, *row, *col, &tcx, diagnostics)
         });
 
         let hir = tcx.hir();
@@ -2656,7 +2655,7 @@ impl Verifier {
             arch_word_bits: None,
             crate_name: Arc::new(crate_name.clone()),
             vstd_crate_name,
-            here,
+            here_placement,
         });
         let multi_crate = self.args.export.is_some() || import_len > 0 || self.args.use_crate_name;
         crate::rust_to_vir_base::MULTI_CRATE.with(|m| m.store(multi_crate, Ordering::Relaxed));
@@ -2671,13 +2670,29 @@ impl Verifier {
             crate::rust_to_vir::crate_to_vir(&mut ctxt, &other_vir_crates)
                 .map_err(map_err_diagnostics)?;
 
-        if let Some(here) = &ctxt.here {
+        if let Some(here) = &ctxt.here_placement {
             if !here.found.load(Ordering::Relaxed) {
                 let span = crate::spans::err_air_span(here.span);
                 let warn = warning(&span, "failed to place `--here` location in the source code");
                 diagnostics.report_now(&warn.to_any());
             }
         }
+
+        let here_markers = vir::check_here::check_here(&vir_crate);
+        if here_markers.len() > 1 {
+            let msg = Arc::new(MessageX {
+                level: MessageLevel::Error,
+                note: "multiple `here` markers are not supported".into(),
+                spans: here_markers.iter().map(|m| m.expr.span.clone()).collect(),
+                labels: Vec::new(),
+                help: None,
+                fancy_note: None,
+            });
+
+            diagnostics.report_now(&msg.to_any());
+        }
+
+        self.here_marker = here_markers.into_iter().next();
 
         let time2 = Instant::now();
         let vir_crate = vir::ast_sort::sort_krate(&vir_crate);

@@ -653,7 +653,7 @@ pub(crate) fn block_to_vir<'tcx>(
 ) -> Result<vir::ast::Expr, VirErr> {
     use std::sync::atomic::Ordering::Relaxed;
 
-    let mut here_opt = bctx.ctxt.here.as_deref().filter(|here| {
+    let mut here_opt = bctx.ctxt.here_placement.as_deref().filter(|here| {
         if here.done.load(Relaxed) {
             return false;
         }

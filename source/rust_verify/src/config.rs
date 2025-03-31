@@ -69,6 +69,23 @@ pub enum Vstd {
 }
 
 #[derive(Debug)]
+pub struct HereArg {
+    pub file: std::path::PathBuf,
+    pub line: usize,
+    pub col: u32,
+}
+
+impl HereArg {
+    fn parse(s: &str) -> Option<Self> {
+        let mut parts = s.split(':');
+        let file = std::path::PathBuf::from_str(parts.next()?).ok()?;
+        let line = parts.next()?.parse::<usize>().ok()?.checked_sub(1)?;
+        let col = parts.next()?.parse::<u32>().ok()?.checked_sub(1)?;
+        Some(Self { file, line, col })
+    }
+}
+
+#[derive(Debug)]
 pub struct ArgsX {
     pub export: Option<String>,
     pub import: Vec<(String, String)>,
@@ -109,7 +126,7 @@ pub struct ArgsX {
     pub solver: SmtSolver,
     #[cfg(feature = "axiom-usage-info")]
     pub axiom_usage_info: bool,
-    pub here_loc: Option<(std::path::PathBuf, usize, u32)>,
+    pub here_arg: Option<HereArg>,
 }
 
 impl ArgsX {
@@ -154,7 +171,7 @@ impl ArgsX {
             solver: Default::default(),
             #[cfg(feature = "axiom-usage-info")]
             axiom_usage_info: Default::default(),
-            here_loc: None,
+            here_arg: None,
         }
     }
 }
@@ -564,16 +581,8 @@ pub fn parse_args_with_imports(
         }
     }
 
-    fn parse_here_arg(s: String) -> Option<(std::path::PathBuf, usize, u32)> {
-        let mut parts = s.split(':');
-        let file = std::path::PathBuf::from_str(parts.next()?).ok()?;
-        let line = parts.next()?.parse::<usize>().ok()?.checked_sub(1)?;
-        let col = parts.next()?.parse::<u32>().ok()?.checked_sub(1)?;
-        Some((file, line, col))
-    }
-
-    let here_loc = matches.opt_str(OPT_HERE).and_then(|s| {
-        let parsed = parse_here_arg(s);
+    let here_arg = matches.opt_str(OPT_HERE).and_then(|s| {
+        let parsed = HereArg::parse(&s);
         if parsed.is_none() {
             eprintln!("Warning: invalid --{} argument", OPT_HERE);
         }
@@ -720,7 +729,7 @@ pub fn parse_args_with_imports(
         solver: if extended.get(EXTENDED_CVC5).is_some() { SmtSolver::Cvc5 } else { SmtSolver::Z3 },
         #[cfg(feature = "axiom-usage-info")]
         axiom_usage_info: extended.get(EXTENDED_AXIOM_USAGE_INFO).is_some(),
-        here_loc,
+        here_arg,
     };
 
     (Arc::new(args), unmatched)

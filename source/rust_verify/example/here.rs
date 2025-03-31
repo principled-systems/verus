@@ -25,8 +25,9 @@ verus! {
         assert(s[0] == 0);
     }
 
+    #[allow(non_camel_case_types)]
     type here = u32;
-    fn here(here: here) -> here {
+    exec fn here(here: here) -> here {
         let here = here;
         here>();
         here

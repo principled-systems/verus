@@ -38,6 +38,7 @@ mod ast_visitor;
 pub mod autospec;
 pub mod bitvector_to_air;
 pub mod check_ast_flavor;
+pub mod check_here;
 mod closures;
 pub mod context;
 pub mod datatype_to_air;

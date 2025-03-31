@@ -48,7 +48,7 @@ pub struct ContextX<'tcx> {
     pub(crate) arch_word_bits: Option<vir::ast::ArchWordBits>,
     pub(crate) crate_name: Ident,
     pub(crate) vstd_crate_name: Ident,
-    pub(crate) here: Option<Arc<HerePlacement>>,
+    pub(crate) here_placement: Option<Arc<HerePlacement>>,
 }
 
 #[derive(Clone)]
