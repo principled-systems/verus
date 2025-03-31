@@ -51,7 +51,7 @@ pub(crate) enum Precedence {
     Product,
     // as
     Cast,
-    // x has y, x is y, x matches pat
+    // x has y, x !has y, x is y, x !is y, x matches pat
     HasIsMatches,
     // unary - * ! & &mut
     #[cfg(feature = "printing")]
@@ -212,7 +212,9 @@ impl Precedence {
             | Expr::GetField(_)
             | Expr::Here(_) => Precedence::Unambiguous,
             Expr::BigAnd(_) | Expr::BigOr(_) => Precedence::Assign,
-            Expr::Has(_) | Expr::Is(_) | Expr::Matches(_) => Precedence::HasIsMatches,
+            Expr::Has(_) | Expr::Is(_) | Expr::IsNot(_) | Expr::HasNot(_) | Expr::Matches(_) => {
+                Precedence::HasIsMatches
+            }
         }
     }
 }

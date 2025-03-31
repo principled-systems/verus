@@ -58,6 +58,7 @@ a.struct[title="struct syn::token::Ghost"],
 a.struct[title="struct syn::token::Global"],
 a.struct[title="struct syn::token::Gt"],
 a.struct[title="struct syn::token::Has"],
+a.struct[title="struct syn::token::HasNot"],
 a.struct[title="struct syn::token::Here"],
 a.struct[title="struct syn::token::Hide"],
 a.struct[title="struct syn::token::If"],
@@ -71,6 +72,7 @@ a.struct[title="struct syn::token::Invariant"],
 a.struct[title="struct syn::token::InvariantEnsures"],
 a.struct[title="struct syn::token::InvariantExceptBreak"],
 a.struct[title="struct syn::token::Is"],
+a.struct[title="struct syn::token::IsNot"],
 a.struct[title="struct syn::token::LArrow"],
 a.struct[title="struct syn::token::Layout"],
 a.struct[title="struct syn::token::Le"],
@@ -142,6 +144,7 @@ a.struct[title="struct syn::token::Try"],
 a.struct[title="struct syn::token::Type"],
 a.struct[title="struct syn::token::Typeof"],
 a.struct[title="struct syn::token::Underscore"],
+a.struct[title="struct syn::token::Uninterp"],
 a.struct[title="struct syn::token::Union"],
 a.struct[title="struct syn::token::Unsafe"],
 a.struct[title="struct syn::token::Unsized"],
@@ -217,6 +220,7 @@ a.struct[title="struct syn::token::Ghost"]::before,
 a.struct[title="struct syn::token::Global"]::before,
 a.struct[title="struct syn::token::Gt"]::before,
 a.struct[title="struct syn::token::Has"]::before,
+a.struct[title="struct syn::token::HasNot"]::before,
 a.struct[title="struct syn::token::Here"]::before,
 a.struct[title="struct syn::token::Hide"]::before,
 a.struct[title="struct syn::token::If"]::before,
@@ -230,6 +234,7 @@ a.struct[title="struct syn::token::Invariant"]::before,
 a.struct[title="struct syn::token::InvariantEnsures"]::before,
 a.struct[title="struct syn::token::InvariantExceptBreak"]::before,
 a.struct[title="struct syn::token::Is"]::before,
+a.struct[title="struct syn::token::IsNot"]::before,
 a.struct[title="struct syn::token::LArrow"]::before,
 a.struct[title="struct syn::token::Layout"]::before,
 a.struct[title="struct syn::token::Le"]::before,
@@ -301,6 +306,7 @@ a.struct[title="struct syn::token::Try"]::before,
 a.struct[title="struct syn::token::Type"]::before,
 a.struct[title="struct syn::token::Typeof"]::before,
 a.struct[title="struct syn::token::Underscore"]::before,
+a.struct[title="struct syn::token::Uninterp"]::before,
 a.struct[title="struct syn::token::Union"]::before,
 a.struct[title="struct syn::token::Unsafe"]::before,
 a.struct[title="struct syn::token::Unsized"]::before,
@@ -557,6 +563,10 @@ a.struct[title="struct syn::token::Has"]::before {
 	content: "Token![has]";
 }
 
+a.struct[title="struct syn::token::HasNot"]::before {
+	content: "Token![hasnt]";
+}
+
 a.struct[title="struct syn::token::Here"]::before {
 	content: "Token![here]";
 }
@@ -607,6 +617,10 @@ a.struct[title="struct syn::token::InvariantExceptBreak"]::before {
 
 a.struct[title="struct syn::token::Is"]::before {
 	content: "Token![is]";
+}
+
+a.struct[title="struct syn::token::IsNot"]::before {
+	content: "Token![isnt]";
 }
 
 a.struct[title="struct syn::token::LArrow"]::before {
@@ -894,6 +908,10 @@ a.struct[title="struct syn::token::Underscore"]::before {
 	font-size: calc(100% * 10 / 9);
 }
 
+a.struct[title="struct syn::token::Uninterp"]::before {
+	content: "Token![uninterp]";
+}
+
 a.struct[title="struct syn::token::Union"]::before {
 	content: "Token![union]";
 }
@@ -1016,6 +1034,8 @@ a.struct[title="struct syn::token::At"]::after,
 a.struct[title="struct syn::token::Eq"]::after,
 a.struct[title="struct syn::token::Equiv"]::after,
 a.struct[title="struct syn::token::Gt"]::after,
+a.struct[title="struct syn::token::HasNot"]::after,
+a.struct[title="struct syn::token::IsNot"]::after,
 a.struct[title="struct syn::token::Lt"]::after,
 a.struct[title="struct syn::token::NeEq"]::after,
 a.struct[title="struct syn::token::Or"]::after,
@@ -1101,6 +1121,7 @@ a.struct[title="struct syn::token::Trait"]::after,
 a.struct[title="struct syn::token::Try"]::after,
 a.struct[title="struct syn::token::Type"]::after,
 a.struct[title="struct syn::token::Typeof"]::after,
+a.struct[title="struct syn::token::Uninterp"]::after,
 a.struct[title="struct syn::token::Union"]::after,
 a.struct[title="struct syn::token::Unsafe"]::after,
 a.struct[title="struct syn::token::Unsized"]::after,

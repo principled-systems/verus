@@ -152,6 +152,15 @@ pub assume_specification[ core::intrinsics::unlikely ](b: bool) -> (c: bool)
         c == b,
 ;
 
+pub assume_specification<T, F: FnOnce() -> T>[ bool::then ](b: bool, f: F) -> (ret: Option<T>)
+    ensures
+        if b {
+            ret.is_some() && f.ensures((), ret.unwrap())
+        } else {
+            ret.is_none()
+        },
+;
+
 #[verifier::external_type_specification]
 #[verifier::external_body]
 #[verifier::reject_recursive_types_in_ground_variants(V)]
@@ -220,5 +229,10 @@ impl<T> IndexSetTrustedSpec<usize> for [T] {
         new_container@ == self@.update(index as int, val)
     }
 }
+
+pub assume_specification[ core::hint::unreachable_unchecked ]() -> !
+    requires
+        false,
+;
 
 } // verus!

@@ -264,6 +264,9 @@ pub trait Fold {
     fn fold_expr_has(&mut self, i: crate::ExprHas) -> crate::ExprHas {
         fold_expr_has(self, i)
     }
+    fn fold_expr_has_not(&mut self, i: crate::ExprHasNot) -> crate::ExprHasNot {
+        fold_expr_has_not(self, i)
+    }
     #[cfg(feature = "full")]
     #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
     fn fold_expr_if(&mut self, i: crate::ExprIf) -> crate::ExprIf {
@@ -281,6 +284,9 @@ pub trait Fold {
     }
     fn fold_expr_is(&mut self, i: crate::ExprIs) -> crate::ExprIs {
         fold_expr_is(self, i)
+    }
+    fn fold_expr_is_not(&mut self, i: crate::ExprIsNot) -> crate::ExprIsNot {
+        fold_expr_is_not(self, i)
     }
     #[cfg(feature = "full")]
     #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
@@ -595,6 +601,12 @@ pub trait Fold {
         i: crate::InvariantNameSetNone,
     ) -> crate::InvariantNameSetNone {
         fold_invariant_name_set_none(self, i)
+    }
+    fn fold_invariant_name_set_set(
+        &mut self,
+        i: crate::InvariantNameSetSet,
+    ) -> crate::InvariantNameSetSet {
+        fold_invariant_name_set_set(self, i)
     }
     #[cfg(feature = "full")]
     #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
@@ -1170,6 +1182,9 @@ pub trait Fold {
     #[cfg_attr(docsrs, doc(cfg(any(feature = "derive", feature = "full"))))]
     fn fold_un_op(&mut self, i: crate::UnOp) -> crate::UnOp {
         fold_un_op(self, i)
+    }
+    fn fold_uninterp(&mut self, i: crate::Uninterp) -> crate::Uninterp {
+        fold_uninterp(self, i)
     }
     #[cfg(feature = "full")]
     #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
@@ -1829,7 +1844,13 @@ where
         }
         crate::Expr::BigOr(_binding_0) => crate::Expr::BigOr(f.fold_big_or(_binding_0)),
         crate::Expr::Is(_binding_0) => crate::Expr::Is(f.fold_expr_is(_binding_0)),
+        crate::Expr::IsNot(_binding_0) => {
+            crate::Expr::IsNot(f.fold_expr_is_not(_binding_0))
+        }
         crate::Expr::Has(_binding_0) => crate::Expr::Has(f.fold_expr_has(_binding_0)),
+        crate::Expr::HasNot(_binding_0) => {
+            crate::Expr::HasNot(f.fold_expr_has_not(_binding_0))
+        }
         crate::Expr::Matches(_binding_0) => {
             crate::Expr::Matches(f.fold_expr_matches(_binding_0))
         }
@@ -2070,6 +2091,17 @@ where
         rhs: Box::new(f.fold_expr(*node.rhs)),
     }
 }
+pub fn fold_expr_has_not<F>(f: &mut F, node: crate::ExprHasNot) -> crate::ExprHasNot
+where
+    F: Fold + ?Sized,
+{
+    crate::ExprHasNot {
+        attrs: f.fold_attributes(node.attrs),
+        lhs: Box::new(f.fold_expr(*node.lhs)),
+        has_not_token: node.has_not_token,
+        rhs: Box::new(f.fold_expr(*node.rhs)),
+    }
+}
 #[cfg(feature = "full")]
 #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
 pub fn fold_expr_if<F>(f: &mut F, node: crate::ExprIf) -> crate::ExprIf
@@ -2117,6 +2149,17 @@ where
         attrs: f.fold_attributes(node.attrs),
         base: Box::new(f.fold_expr(*node.base)),
         is_token: node.is_token,
+        variant_ident: Box::new(f.fold_ident(*node.variant_ident)),
+    }
+}
+pub fn fold_expr_is_not<F>(f: &mut F, node: crate::ExprIsNot) -> crate::ExprIsNot
+where
+    F: Fold + ?Sized,
+{
+    crate::ExprIsNot {
+        attrs: f.fold_attributes(node.attrs),
+        base: Box::new(f.fold_expr(*node.base)),
+        is_not_token: node.is_not_token,
         variant_ident: Box::new(f.fold_ident(*node.variant_ident)),
     }
 }
@@ -2983,6 +3026,9 @@ where
         crate::InvariantNameSet::List(_binding_0) => {
             crate::InvariantNameSet::List(f.fold_invariant_name_set_list(_binding_0))
         }
+        crate::InvariantNameSet::Set(_binding_0) => {
+            crate::InvariantNameSet::Set(f.fold_invariant_name_set_set(_binding_0))
+        }
     }
 }
 pub fn fold_invariant_name_set_any<F>(
@@ -3017,6 +3063,17 @@ where
 {
     crate::InvariantNameSetNone {
         token: node.token,
+    }
+}
+pub fn fold_invariant_name_set_set<F>(
+    f: &mut F,
+    node: crate::InvariantNameSetSet,
+) -> crate::InvariantNameSetSet
+where
+    F: Fold + ?Sized,
+{
+    crate::InvariantNameSetSet {
+        expr: f.fold_expr(node.expr),
     }
 }
 #[cfg(feature = "full")]
@@ -4053,6 +4110,9 @@ where
         crate::Publish::OpenRestricted(_binding_0) => {
             crate::Publish::OpenRestricted(f.fold_open_restricted(_binding_0))
         }
+        crate::Publish::Uninterp(_binding_0) => {
+            crate::Publish::Uninterp(f.fold_uninterp(_binding_0))
+        }
         crate::Publish::Default => crate::Publish::Default,
     }
 }
@@ -4724,6 +4784,14 @@ where
         crate::UnOp::Forall(_binding_0) => crate::UnOp::Forall(_binding_0),
         crate::UnOp::Exists(_binding_0) => crate::UnOp::Exists(_binding_0),
         crate::UnOp::Choose(_binding_0) => crate::UnOp::Choose(_binding_0),
+    }
+}
+pub fn fold_uninterp<F>(f: &mut F, node: crate::Uninterp) -> crate::Uninterp
+where
+    F: Fold + ?Sized,
+{
+    crate::Uninterp {
+        token: node.token,
     }
 }
 #[cfg(feature = "full")]

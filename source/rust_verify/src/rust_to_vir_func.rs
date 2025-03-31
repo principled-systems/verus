@@ -1,4 +1,5 @@
-use crate::attributes::{get_mode, get_ret_mode, get_var_mode, VerifierAttrs};
+use crate::attributes::{get_mode, get_ret_mode, get_var_mode, AttrPublish, VerifierAttrs};
+use crate::automatic_derive::AutomaticDeriveAction;
 use crate::context::{BodyCtxt, Context};
 use crate::rust_to_vir_base::mk_visibility;
 use crate::rust_to_vir_base::{
@@ -25,8 +26,9 @@ use rustc_trait_selection::traits::ImplSource;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use vir::ast::{
-    Fun, FunX, FunctionAttrsX, FunctionKind, FunctionX, GenericBoundX, ItemKind, KrateX, Mode,
-    Opaqueness, ParamX, SpannedTyped, Typ, TypDecoration, TypX, VarIdent, VirErr, Visibility,
+    BodyVisibility, Fun, FunX, FunctionAttrsX, FunctionKind, FunctionX, GenericBoundX, ItemKind,
+    KrateX, Mode, Opaqueness, ParamX, SpannedTyped, Typ, TypDecoration, TypX, VarIdent, VirErr,
+    Visibility,
 };
 use vir::ast_util::{air_unique_var, clean_ensures_for_unit_return, unit_typ};
 use vir::def::{RETURN_VALUE, VERUS_SPEC};
@@ -156,10 +158,10 @@ fn compare_external_sig<'tcx>(
     external_trait_from_to: &Option<(vir::ast::Path, vir::ast::Path)>,
 ) -> Result<bool, VirErr> {
     use rustc_middle::ty::FnSig;
-    // Ignore abi for the sake of comparison
+    // Ignore abi and safety for the sake of comparison
     // Useful for rust-intrinsics
-    let FnSig { inputs_and_output: io1, c_variadic: c1, safety: s1, abi: _ } = sig1;
-    let FnSig { inputs_and_output: io2, c_variadic: c2, safety: s2, abi: _ } = sig2;
+    let FnSig { inputs_and_output: io1, c_variadic: c1, safety: _, abi: _ } = sig1;
+    let FnSig { inputs_and_output: io2, c_variadic: c2, safety: _, abi: _ } = sig2;
     if io1.len() != io2.len() {
         return Ok(false);
     }
@@ -176,7 +178,7 @@ fn compare_external_sig<'tcx>(
             return Ok(false);
         }
     }
-    Ok(c1 == c2 && s1 == s2)
+    Ok(c1 == c2)
 }
 
 pub(crate) fn handle_external_fn<'tcx>(
@@ -193,7 +195,7 @@ pub(crate) fn handle_external_fn<'tcx>(
     external_trait_from_to: &Option<(vir::ast::Path, vir::ast::Path)>,
     external_fn_specification_via_external_trait: Option<DefId>,
     external_info: &mut ExternalInfo,
-) -> Result<(vir::ast::Path, vir::ast::Visibility, FunctionKind, bool), VirErr> {
+) -> Result<(vir::ast::Path, vir::ast::Visibility, FunctionKind, bool, Safety), VirErr> {
     // This function is the proxy, and we need to look up the actual path.
 
     if mode != Mode::Exec {
@@ -308,7 +310,7 @@ pub(crate) fn handle_external_fn<'tcx>(
         return err_span(
             sig.span,
             format!(
-                "assume_specification requires function type signature to match exactly (got `{ty1:#?}` and `{ty2:#?}`)"
+                "assume_specification requires function type signature to match exactly (got `{poly_sig1:#?}` and `{poly_sig2:#?}`)"
             ),
         );
     }
@@ -360,7 +362,9 @@ pub(crate) fn handle_external_fn<'tcx>(
         external_info.external_fn_specification_trait_method_impls.push((external_id, sig.span));
     }
 
-    Ok((external_path, external_item_visibility, kind, has_self_parameter))
+    let safety = ctxt.tcx.fn_sig(external_id).skip_binder().safety();
+
+    Ok((external_path, external_item_visibility, kind, has_self_parameter, safety))
 }
 
 fn get_substs_early<'tcx>(
@@ -525,6 +529,7 @@ fn make_attributes<'tcx>(
     autospec: Option<Fun>,
     print_zero_args: bool,
     print_as_method: bool,
+    safety: Safety,
     span: Span,
 ) -> Result<vir::ast::FunctionAttrs, VirErr> {
     if vattrs.nonlinear && vattrs.spinoff_prover {
@@ -557,6 +562,11 @@ fn make_attributes<'tcx>(
         prophecy_dependent: vattrs.prophecy_dependent,
         size_of_broadcast_proof: vattrs.size_of_broadcast_proof,
         is_type_invariant_fn: vattrs.type_invariant_fn,
+        is_external_body: vattrs.external_body,
+        is_unsafe: match safety {
+            Safety::Safe => false,
+            Safety::Unsafe => true,
+        },
     };
     Ok(Arc::new(fattrs))
 }
@@ -578,6 +588,7 @@ pub(crate) fn check_item_fn<'tcx>(
     external_trait: Option<DefId>,
     external_fn_specification_via_external_trait: Option<DefId>,
     external_info: &mut ExternalInfo,
+    autoderive_action: Option<&AutomaticDeriveAction>,
 ) -> Result<Option<Fun>, VirErr> {
     let this_path = def_id_to_vir_path(ctxt.tcx, &ctxt.verus_items, id);
 
@@ -595,7 +606,8 @@ pub(crate) fn check_item_fn<'tcx>(
         None
     };
 
-    let (path, proxy, visibility, kind, has_self_param) = if vattrs.external_fn_specification
+    let (path, proxy, visibility, kind, has_self_param, safety) = if vattrs
+        .external_fn_specification
         || external_fn_specification_via_external_trait.is_some()
     {
         if is_verus_spec {
@@ -605,28 +617,29 @@ pub(crate) fn check_item_fn<'tcx>(
             );
         }
 
-        let (external_path, external_item_visibility, kind, has_self_param) = handle_external_fn(
-            ctxt,
-            id,
-            kind,
-            visibility,
-            sig,
-            self_generics,
-            &body_id,
-            mode,
-            &vattrs,
-            &external_trait_from_to,
-            external_fn_specification_via_external_trait,
-            external_info,
-        )?;
+        let (external_path, external_item_visibility, kind, has_self_param, safety) =
+            handle_external_fn(
+                ctxt,
+                id,
+                kind,
+                visibility,
+                sig,
+                self_generics,
+                &body_id,
+                mode,
+                &vattrs,
+                &external_trait_from_to,
+                external_fn_specification_via_external_trait,
+                external_info,
+            )?;
 
         let proxy = (*ctxt.spanned_new(sig.span, this_path.clone())).clone();
 
-        (external_path, Some(proxy), external_item_visibility, kind, has_self_param)
+        (external_path, Some(proxy), external_item_visibility, kind, has_self_param, safety)
     } else {
         // No proxy.
         let has_self_param = has_self_parameter(ctxt, id);
-        (this_path.clone(), None, visibility, kind, has_self_param)
+        (this_path.clone(), None, visibility, kind, has_self_param, sig.header.safety)
     };
 
     let name = Arc::new(FunX { path: path.clone() });
@@ -782,17 +795,17 @@ pub(crate) fn check_item_fn<'tcx>(
 
     let n_params = vir_params.len();
 
-    let (vir_body, header) = match body_id {
+    let (vir_body, header, body_hir_id) = match body_id {
         CheckItemFnEither::BodyId(body_id) => {
             let body = find_body(ctxt, body_id);
             let external_body = vattrs.external_body || vattrs.external_fn_specification;
             let mut vir_body = body_to_vir(ctxt, id, body_id, body, mode, external_body)?;
             let header = vir::headers::read_header(&mut vir_body)?;
-            (Some(vir_body), header)
+            (Some(vir_body), header, Some(body.value.hir_id))
         }
         CheckItemFnEither::ParamNames(_params) => {
             let header = vir::headers::read_header_block(&mut vec![])?;
-            (None, header)
+            (None, header, None)
         }
     };
 
@@ -964,7 +977,8 @@ pub(crate) fn check_item_fn<'tcx>(
     } else {
         vir_body
     };
-    let open_closed_present = vattrs.publish.is_some();
+    let open_closed_present =
+        vattrs.publish == Some(AttrPublish::Open) || vattrs.publish == Some(AttrPublish::Closed);
     match kind {
         FunctionKind::TraitMethodImpl { .. } | FunctionKind::TraitMethodDecl { .. }
             if body.is_some() =>
@@ -1018,6 +1032,7 @@ pub(crate) fn check_item_fn<'tcx>(
         autospec,
         n_params == 0,
         has_self_param,
+        safety,
         sig.span,
     )?;
 
@@ -1059,6 +1074,7 @@ pub(crate) fn check_item_fn<'tcx>(
         sig.span,
         &visibility,
         vattrs.publish,
+        &header.open_visibility_qualifier,
         vattrs.opaque,
         vattrs.opaque_outside_module,
         mode,
@@ -1097,6 +1113,17 @@ pub(crate) fn check_item_fn<'tcx>(
 
     if vattrs.external_fn_specification {
         func = fix_external_fn_specification_trait_method_decl_typs(sig.span, func)?;
+    }
+    if let Some(action) = autoderive_action {
+        if let Some(body_hir_id) = body_hir_id {
+            crate::automatic_derive::modify_derived_item(
+                ctxt,
+                sig.span,
+                body_hir_id,
+                action,
+                &mut func,
+            )?;
+        }
     }
     let function = ctxt.spanned_new(sig.span, func);
     let function = if let Some((from_path, to_path)) = &external_trait_from_to {
@@ -1526,7 +1553,7 @@ pub(crate) fn get_external_def_id<'tcx>(
         )
     };
 
-    // Get the 'body' of this function (skipping over header if necessary)
+    // Get the 'body' of this function (skipping over header and unsafe-block if necessary)
     let expr = match &body.value.kind {
         ExprKind::Block(block_body, _) => match &block_body.expr {
             Some(body_value) => body_value,
@@ -1535,6 +1562,15 @@ pub(crate) fn get_external_def_id<'tcx>(
             }
         },
         _ => &body.value,
+    };
+    let expr = match &expr.kind {
+        ExprKind::Block(block_body, _) => match &block_body.expr {
+            Some(body_value) => body_value,
+            None => {
+                return err();
+            }
+        },
+        _ => &expr,
     };
 
     let types = body_id_to_types(tcx, body_id);
@@ -1762,6 +1798,7 @@ pub(crate) fn check_item_const_or_static<'tcx>(
         autospec,
         false,
         false,
+        Safety::Safe,
         span,
     )?;
 
@@ -1772,6 +1809,7 @@ pub(crate) fn check_item_const_or_static<'tcx>(
         span,
         &visibility,
         vattrs.publish,
+        &header.open_visibility_qualifier,
         vattrs.opaque,
         vattrs.opaque_outside_module,
         func_mode,
@@ -1885,7 +1923,7 @@ pub(crate) fn check_foreign_item_fn<'tcx>(
     let ret = ctxt.spanned_new(span, ret_param);
 
     // No body, so these don't matter
-    let body_visibility = visibility.clone();
+    let body_visibility = vir::ast::BodyVisibility::Visibility(visibility.clone());
     let opaqueness = Opaqueness::Opaque;
 
     let func = FunctionX {
@@ -1924,20 +1962,28 @@ pub(crate) fn check_foreign_item_fn<'tcx>(
 fn get_body_visibility_and_fuel(
     span: Span,
     func_visibility: &Visibility,
-    publish: Option<bool>,
+    publish: Option<AttrPublish>,
+    open_visibility_qualifier: &Option<Visibility>,
     opaque: bool,
     opaque_outside_module: bool,
     mode: Mode,
     my_module: &vir::ast::Path,
     has_body: bool,
-) -> Result<(Visibility, Opaqueness), VirErr> {
+) -> Result<(BodyVisibility, Opaqueness), VirErr> {
     let private_vis = Visibility { restricted_to: Some(my_module.clone()) };
 
+    if open_visibility_qualifier.is_some() && publish != Some(AttrPublish::Open) {
+        crate::internal_err!(
+            span,
+            "found 'open_visibility_qualifier' declaration but no 'publish' attribute"
+        )
+    }
+
     if mode != Mode::Spec {
-        if publish == Some(true) {
+        if publish == Some(AttrPublish::Open) {
             return err_span(span, "function is marked `open` but it is not a `spec` function");
         }
-        if publish == Some(false) {
+        if publish == Some(AttrPublish::Closed) {
             return err_span(span, "function is marked `closed` but it is not a `spec` function");
         }
         if opaque || opaque_outside_module {
@@ -1945,28 +1991,52 @@ fn get_body_visibility_and_fuel(
         }
 
         // These don't matter for non-spec functions
-        Ok((private_vis, Opaqueness::Opaque))
+        Ok((BodyVisibility::Visibility(private_vis), Opaqueness::Opaque))
     } else if !has_body {
         if opaque || opaque_outside_module {
             return err_span(span, "opaque has no effect on a function without a body");
         }
 
-        // These don't matter without a body
-        Ok((private_vis, Opaqueness::Opaque))
+        if publish == Some(AttrPublish::Uninterp) {
+            Ok((BodyVisibility::Uninterpreted, Opaqueness::Opaque))
+        } else {
+            // These don't matter without a body
+            Ok((BodyVisibility::Visibility(private_vis), Opaqueness::Opaque))
+        }
     } else {
+        // mode == Mode::Spec && has_body
+        if publish == Some(AttrPublish::Uninterp) {
+            return err_span(span, "function is marked `uninterp` but it has a body");
+        }
+
         if opaque && opaque_outside_module {
             return err_span(span, "function is marked both 'opaque' and 'opaque_outside_module'");
         }
 
-        if publish == Some(true) && func_visibility == &private_vis {
+        if publish == Some(AttrPublish::Open) && func_visibility == &private_vis {
             return err_span(
                 span,
                 "function is marked `open` but not marked `pub`; for the body of a function to be visible, the function symbol must also be visible",
             );
         }
 
-        let body_visibility =
-            if publish == Some(true) { func_visibility.clone() } else { private_vis.clone() };
+        if let Some(vis) = open_visibility_qualifier {
+            if !vis.at_least_as_restrictive_as(&func_visibility) {
+                return err_span(
+                    span,
+                    "the function body is declared 'open' to a wider scope than the function itself",
+                );
+            }
+        }
+
+        let body_visibility = if publish == Some(AttrPublish::Open) {
+            match open_visibility_qualifier {
+                None => func_visibility.clone(),
+                Some(vis) => vis.clone(),
+            }
+        } else {
+            private_vis.clone()
+        };
 
         let opaqueness = if opaque {
             Opaqueness::Opaque
@@ -1979,6 +2049,6 @@ fn get_body_visibility_and_fuel(
             }
         };
 
-        Ok((body_visibility, opaqueness))
+        Ok((BodyVisibility::Visibility(body_visibility), opaqueness))
     }
 }

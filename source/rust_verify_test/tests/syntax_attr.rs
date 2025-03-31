@@ -168,8 +168,8 @@ test_verify_one_file! {
     } => Err(err) => assert_any_vir_error_msg(err, "Misuse of #[verus_spec]")
 }
 
-test_verify_one_file! {
-    #[test] test_no_verus_verify_attributes_in_trait_impl code!{
+test_verify_one_file_with_options! {
+    #[test] test_no_verus_verify_attributes_in_trait_impl ["--no-external-by-default"] => code!{
         struct Abc<T> {
             t: T,
         }
@@ -193,6 +193,7 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] test_failed_ensures_macro_attributes code!{
+        #[verus_verify]
         trait SomeTrait {
             #[verus_spec(ret =>
                 requires true
@@ -201,6 +202,7 @@ test_verify_one_file! {
             fn f(&self) -> bool;
         }
 
+        #[verus_verify]
         impl SomeTrait for bool {
             fn f(&self) -> bool {
                 *self
@@ -211,6 +213,7 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] test_default_fn_use_macro_attributes code!{
+        #[verus_verify]
         struct Abc<T> {
             t: T,
         }
@@ -240,11 +243,12 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] test_default_failed_fn_use_macro_attributes code!{
+        #[verus_verify]
         struct Abc<T> {
             t: T,
         }
 
-        #[verus_verify]
+        #[verus_verify(rlimit(2))]
         trait SomeTrait {
             #[verus_spec(ret =>
                 requires true
@@ -273,4 +277,88 @@ test_verify_one_file! {
             proof!{assert(r);}
         }
     } => Ok(())
+}
+
+test_verify_one_file! {
+    #[test] test_external_with_unsupported_features code!{
+        #[verus_verify(external)]
+        fn f<'a>(v: &'a mut [usize]) -> &'a mut usize {
+            unimplemented!()
+        }
+    } => Ok(())
+}
+
+test_verify_one_file! {
+    #[test] test_prover_attributes code!{
+        #[verus_verify(spinoff_prover, rlimit(2))]
+        #[verus_spec(
+            ensures
+                true
+        )]
+        fn test()
+        {}
+    } => Ok(())
+}
+
+test_verify_one_file! {
+    #[test] test_invalid_combination_attr code!{
+        #[verus_verify(external, spinoff_prover)]
+        fn f<'a>(v: &'a mut [usize]) -> &'a mut usize {
+            unimplemented!()
+        }
+    } => Err(e) => assert_any_vir_error_msg(e, "conflict parameters")
+}
+
+test_verify_one_file! {
+    #[test] test_proof_decl code!{
+        #[verus_spec]
+        fn f() {}
+        #[verus_spec]
+        fn test() {
+            proof!{
+                let x = 1 as int;
+                assert(x == 1);
+            }
+            proof_decl!{
+                let ghost mut x;
+                let tracked y = false;
+                x = 2int;
+                assert(!y);
+                if x == 1 {
+                    assert(false);
+                }
+            }
+
+            f();
+            proof!{
+                assert(!y);
+                assert(x == 2);
+            }
+        }
+    } => Ok(())
+}
+
+test_verify_one_file! {
+    #[test] test_proof_decl_reject_exec code!{
+        #[verus_spec]
+        fn f() {}
+        #[verus_spec]
+        fn test() {
+            proof_decl!{
+                f();
+            }
+            f();
+        }
+    } => Err(e) => assert_vir_error_msg(e, "cannot call function `crate::f` with mode exec")
+}
+
+test_verify_one_file! {
+    #[test] test_proof_decl_reject_exec_local code!{
+        #[verus_spec]
+        fn test() {
+            proof_decl!{
+                let x = true;
+            }
+        }
+    } => Err(e) => assert_vir_error_msg(e, "Exec local is not allowed in proof_decl")
 }
