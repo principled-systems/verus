@@ -10,7 +10,6 @@ use crate::messages::{Message, Span};
 pub use air::ast::{Binder, Binders};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 use std::sync::Arc;
 use vir_macros::{to_node_impl, ToDebugSNode};
 
@@ -102,6 +101,14 @@ pub struct Visibility {
     /// None for pub
     /// Some(path) means visible to path and path's descendents
     pub restricted_to: Option<Path>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToDebugSNode, PartialEq, Eq)]
+pub enum BodyVisibility {
+    Uninterpreted,
+    /// None for pub
+    /// Some(path) means visible to path and path's descendents
+    Visibility(Visibility),
 }
 
 /// Describes whether a variable, function, etc. is compiled or just used for verification
@@ -550,9 +557,11 @@ pub enum HeaderExprX {
     /// Proof function to prove termination for recursive functions
     DecreasesBy(Fun),
     /// The function might open the following invariants
-    InvariantOpens(Exprs),
+    InvariantOpens(Span, Exprs),
     /// The function might open any BUT the following invariants
-    InvariantOpensExcept(Exprs),
+    InvariantOpensExcept(Span, Exprs),
+    /// The function might open the following invariants, specified as a set
+    InvariantOpensSet(Expr),
     /// Make a function f opaque (definition hidden) within the current function body.
     /// (The current function body can later reveal f in specific parts of the current function body if desired.)
     Hide(Fun),
@@ -563,6 +572,8 @@ pub enum HeaderExprX {
     NoUnwind,
     /// This function will not unwind if the given condition holds (function of arguments)
     NoUnwindWhen(Expr),
+    /// The visibility used in, e.g., `open(crate)`
+    OpenVisibilityQualifier(Visibility),
 }
 
 /// Primitive constant values
@@ -583,12 +594,6 @@ pub struct SpannedTyped<X> {
     pub span: Span,
     pub typ: Typ,
     pub x: X,
-}
-
-impl<X: Display> Display for SpannedTyped<X> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.x)
-    }
 }
 
 /// Patterns for match expressions
@@ -984,13 +989,19 @@ pub struct FunctionAttrsX {
     pub size_of_broadcast_proof: bool,
     /// is type invariant
     pub is_type_invariant_fn: bool,
+    /// Marked with external_body or external_fn_specification
+    /// TODO: might be duplicate with https://github.com/verus-lang/verus/pull/1473
+    pub is_external_body: bool,
+    /// Is the function marked unsafe (i.e., with the Rust keyword 'unsafe')
+    pub is_unsafe: bool,
 }
 
 /// Function specification of its invariant mask
 #[derive(Clone, Debug, Serialize, Deserialize, ToDebugSNode)]
 pub enum MaskSpec {
-    InvariantOpens(Exprs),
-    InvariantOpensExcept(Exprs),
+    InvariantOpens(Span, Exprs),
+    InvariantOpensExcept(Span, Exprs),
+    InvariantOpensSet(Expr),
 }
 
 /// Function specification of its invariant mask
@@ -1075,7 +1086,7 @@ pub struct FunctionX {
     /// Access control (public/private)
     pub visibility: Visibility,
     /// Controlled by 'open'. (Only applicable to spec functions.)
-    pub body_visibility: Visibility,
+    pub body_visibility: BodyVisibility,
     /// Controlled by 'opaque/opaque_outside_module'. (Only applicable to spec functions.)
     pub opaqueness: Opaqueness,
     /// Owning module
@@ -1225,6 +1236,7 @@ pub struct TraitX {
     pub assoc_typs: Arc<Vec<Ident>>,
     pub assoc_typs_bounds: GenericBounds,
     pub methods: Arc<Vec<Fun>>,
+    pub is_unsafe: bool,
 }
 
 /// impl<typ_params> trait_name<trait_typ_args[1..]> for trait_typ_args[0] { type name = typ; }
@@ -1280,21 +1292,6 @@ pub enum ArchWordBits {
     Exactly(u32),
 }
 
-impl ArchWordBits {
-    pub fn min_bits(&self) -> u32 {
-        match self {
-            ArchWordBits::Either32Or64 => 32,
-            ArchWordBits::Exactly(v) => *v,
-        }
-    }
-    pub fn num_bits(&self) -> Option<u32> {
-        match self {
-            ArchWordBits::Either32Or64 => None,
-            ArchWordBits::Exactly(v) => Some(*v),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Arch {
     pub word_bits: ArchWordBits,
@@ -1326,17 +1323,4 @@ pub struct KrateX {
     pub path_as_rust_names: Vec<(Path, String)>,
     /// Arch info
     pub arch: Arch,
-}
-
-impl FunctionKind {
-    pub(crate) fn inline_okay(&self) -> bool {
-        match self {
-            FunctionKind::Static | FunctionKind::TraitMethodImpl { .. } => true,
-            // We don't want to do inlining for MethodDecls. If a MethodDecl has a body,
-            // it's a *default* body, so we can't know for sure it hasn't been overridden.
-            FunctionKind::TraitMethodDecl { .. } | FunctionKind::ForeignTraitMethodImpl { .. } => {
-                false
-            }
-        }
-    }
 }

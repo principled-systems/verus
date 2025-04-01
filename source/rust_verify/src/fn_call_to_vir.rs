@@ -364,9 +364,10 @@ fn verus_item_to_vir<'tcx, 'a>(
                 let header = match spec_item {
                     SpecItem::Requires => Arc::new(HeaderExprX::Requires(Arc::new(vir_args))),
                     SpecItem::Recommends => Arc::new(HeaderExprX::Recommends(Arc::new(vir_args))),
-                    SpecItem::OpensInvariants => {
-                        Arc::new(HeaderExprX::InvariantOpens(Arc::new(vir_args)))
-                    }
+                    SpecItem::OpensInvariants => Arc::new(HeaderExprX::InvariantOpens(
+                        bctx.ctxt.spans.to_air_span(expr.span.clone()),
+                        Arc::new(vir_args),
+                    )),
                     SpecItem::Returns => Arc::new(HeaderExprX::Returns(vir_args[0].clone())),
                     _ => unreachable!(),
                 };
@@ -381,12 +382,25 @@ fn verus_item_to_vir<'tcx, 'a>(
             }
             SpecItem::OpensInvariantsNone => {
                 record_spec_fn_no_proof_args(bctx, expr);
-                let header = Arc::new(HeaderExprX::InvariantOpens(Arc::new(Vec::new())));
+                let header = Arc::new(HeaderExprX::InvariantOpens(
+                    bctx.ctxt.spans.to_air_span(expr.span.clone()),
+                    Arc::new(Vec::new()),
+                ));
                 mk_expr(ExprX::Header(header))
             }
             SpecItem::OpensInvariantsAny => {
                 record_spec_fn_no_proof_args(bctx, expr);
-                let header = Arc::new(HeaderExprX::InvariantOpensExcept(Arc::new(Vec::new())));
+                let header = Arc::new(HeaderExprX::InvariantOpensExcept(
+                    bctx.ctxt.spans.to_air_span(expr.span.clone()),
+                    Arc::new(Vec::new()),
+                ));
+                mk_expr(ExprX::Header(header))
+            }
+            SpecItem::OpensInvariantsSet => {
+                record_spec_fn_no_proof_args(bctx, expr);
+                let bctx = &BodyCtxt { external_body: false, in_ghost: true, ..bctx.clone() };
+                let arg = mk_one_vir_arg(bctx, expr.span, &args)?;
+                let header = Arc::new(HeaderExprX::InvariantOpensSet(arg));
                 mk_expr(ExprX::Header(header))
             }
             SpecItem::Ensures => {
@@ -1074,9 +1088,17 @@ fn verus_item_to_vir<'tcx, 'a>(
                     let expr_vattrs = bctx.ctxt.get_verifier_attrs(expr_attrs)?;
                     Ok(mk_ty_clip(&to_ty, &cast_to_integer, expr_vattrs.truncate))
                 }
+                ((_, false), TypX::Int(_)) if bctx.types.node_type(args[0].hir_id).is_enum() => {
+                    let cast_to = crate::rust_to_vir_expr::expr_cast_enum_int_to_vir(
+                        bctx, args[0], source_vir, mk_expr,
+                    )?;
+                    let expr_attrs = bctx.ctxt.tcx.hir().attrs(expr.hir_id);
+                    let expr_vattrs = bctx.ctxt.get_verifier_attrs(expr_attrs)?;
+                    Ok(mk_ty_clip(&to_ty, &cast_to, expr_vattrs.truncate))
+                }
                 _ => err_span(
                     expr.span,
-                    "Verus currently only supports casts from integer types, `char`, and pointer types to integer types",
+                    "Verus currently only supports casts from integer types, bool, enum (unit-only or field-less), `char`, and pointer types to integer types",
                 ),
             }
         }
@@ -1876,7 +1898,7 @@ fn get_string_lit_arg<'tcx>(
     }
 }
 
-fn check_variant_field<'tcx>(
+pub(crate) fn check_variant_field<'tcx>(
     bctx: &BodyCtxt<'tcx>,
     span: Span,
     adt_arg: &'tcx Expr<'tcx>,
