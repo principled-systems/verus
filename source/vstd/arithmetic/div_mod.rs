@@ -533,18 +533,6 @@ pub broadcast proof fn lemma_fundamental_div_mod(x: int, d: int)
     }
 }
 
-// TODO: temporarily needed until `broadcast use` can be used in calc!
-proof fn lemma_mul_is_associative_auto()
-    ensures
-        forall|x: int, y: int, z: int|
-            #![trigger x * (y * z)]
-            #![trigger (x * y) * z]
-            x * (y * z) == (x * y) * z,
-{
-    broadcast use lemma_mul_is_associative;
-
-}
-
 /// Proof that dividing `x` by `c * d` is equivalent to first dividing
 /// `x` by `c` and then dividing the result by `d`
 pub broadcast proof fn lemma_div_denominator(x: int, c: int, d: int)
@@ -575,11 +563,13 @@ pub broadcast proof fn lemma_div_denominator(x: int, c: int, d: int)
     assert(x == (c * d) * (x / (c * d)) + x % (c * d));
     assert(r == x - (c * d) * (x / (c * d)));
     assert(r == x - (c * d) * k);
+    {
+    // broadcast use lemma_mul_is_commutative;
     calc! {
         (==)
         c * ((x / c) % d) + x % c; {
             lemma_mod_multiples_vanish(-k, x / c, d);
-            lemma_mul_is_commutative_auto();
+            // lemma_mul_is_commutative_auto();
         }
         c * ((x / c + (-k) * d) % d) + x % c; {
             lemma_hoist_over_denominator(x, (-k) * d, c as nat);
@@ -595,8 +585,9 @@ pub broadcast proof fn lemma_div_denominator(x: int, c: int, d: int)
         }
         c * (((x + (-(k * d * c))) / c) % d) + x % c; {}
         c * (((x - k * d * c) / c) % d) + x % c; {
-            lemma_mul_is_associative_auto();
-            lemma_mul_is_commutative_auto();
+            // broadcast use lemma_mul_is_associative;
+            // broadcast use lemma_mul_is_commutative;
+            // lemma_mul_is_commutative_auto();
         }
         c * ((r / c) % d) + x % c; {}
         c * (r / c) + x % c; {
@@ -617,6 +608,7 @@ pub broadcast proof fn lemma_div_denominator(x: int, c: int, d: int)
             lemma_mod_multiples_vanish(-k, x, c * d);
         }
         x % (c * d);
+    }
     }
     assert(c * (x / c) + x % c - r == c * (x / c) - c * ((x / c) % d) ==> x - r == c * (x / c) - c
         * ((x / c) % d)) by {
@@ -667,7 +659,7 @@ pub broadcast proof fn lemma_mul_hoist_inequality(x: int, y: int, z: int)
         lemma_mod_properties_auto();
         lemma_mul_nonnegative(x, y % z);
         lemma_div_is_ordered(x * (z * (y / z)), x * (z * (y / z)) + x * (y % z), z);
-        lemma_mul_is_associative_auto();
+        broadcast use lemma_mul_is_associative;
         lemma_mul_is_commutative_auto();
         lemma_div_multiples_vanish(x * (y / z), z);
     };
@@ -731,7 +723,7 @@ pub proof fn lemma_truncate_middle(x: int, b: int, c: int)
     assert(b * x == (b * c) * (x / c) + b * (x % c)) by {
         ModINL::lemma_fundamental_div_mod(x, c);
         lemma_mul_is_distributive_auto();
-        lemma_mul_is_associative_auto();
+        broadcast use lemma_mul_is_associative;
     };
 }
 
@@ -961,7 +953,7 @@ pub broadcast proof fn lemma_part_bound1(a: int, b: int, c: int)
             ModINL::lemma_fundamental_div_mod(b * (a / b), b * c);
         }
         b * (a / b) - (b * c) * ((b * (a / b)) / (b * c)); {
-            lemma_mul_is_associative_auto();
+            broadcast use lemma_mul_is_associative;
         }
         b * (a / b) - b * (c * ((b * (a / b)) / (b * c))); {
             lemma_mul_is_distributive_auto();
@@ -1587,7 +1579,7 @@ pub broadcast proof fn lemma_mod_ordering(x: int, k: int, d: int)
             lemma_fundamental_div_mod(x, d * k);
         }
         x % (d * k) + (d * k) * (x / (d * k)); {
-            lemma_mul_is_associative_auto();
+            broadcast use lemma_mul_is_associative;
         }
         x % (d * k) + d * (k * (x / (d * k)));
     }
@@ -1632,7 +1624,7 @@ pub broadcast proof fn lemma_mod_mod(x: int, a: int, b: int)
             lemma_fundamental_div_mod(x, a * b);
         }
         (a * b) * (x / (a * b)) + x % (a * b); {
-            lemma_mul_is_associative_auto();
+            broadcast use lemma_mul_is_associative;
         }
         a * (b * (x / (a * b))) + x % (a * b); {
             lemma_fundamental_div_mod(x % (a * b), a);
