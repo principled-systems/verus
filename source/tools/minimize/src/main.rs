@@ -1760,6 +1760,17 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
             std::fs::write(&file_path, file_data.contents.clone()).expect("write file");
         }
 
+        let deps_hack_path = root_path.join("deps_hack");
+        let deps_hack_src = deps_hack_path.clone();
+        let deps_hack_dst = &config.permutations_dir;
+        if !deps_hack_src.exists() {
+            panic!("where is deps_hack")
+        }
+        // copying
+        std::fs::create_dir_all(&deps_hack_dst).expect("create deps_hack_dst directory");
+        fs_extra::dir::copy(&deps_hack_src, &deps_hack_dst, &fs_extra::dir::CopyOptions::new())
+            .expect("copy deps_hack directory");
+
         let mut max_lines: Option<(&PathBuf, &Lines)> = None;
 
         for (rel_path, lines) in sample_asserts.iter() {
@@ -1771,6 +1782,7 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
 
             // run verus
             if let Err((_, t)) = run_verus(&config.permutations_dir, 7) {
+                println!("verus failed with {}", t);
                 if max_failure_t < t {
                     max_lines = Some((rel_path, lines));
                     max_failure_t = t;
@@ -1926,25 +1938,45 @@ struct JsonRoot {
 }
 
 fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<u32, (String, u32)> {
-    let file_path = proj_path.join("lib.rs");
+    // let file_path = proj_path.join("lib.rs");
 
     let verus_path = current_dir().unwrap().join("../../target-verus/release/verus");
 
+    // let cmd = std::process::Command::new(verus_path)
+    //     .arg("--crate-type=dylib")
+    //     .arg("--output-json")
+    //     .arg("--time")
+    //     .arg(file_path)
+    //     .arg("--rlimit")
+    //     .arg("20")
+    //     .arg("--num-threads")
+    //     .arg(num_threads.to_string())
+    //     .stdout(std::process::Stdio::piped())
+    //     .output()
+    //     .map_err(|e| (format!("failed to run verus: {}", e), 0))?;
+
+    // anvil command:
+    // verus -L dependency=deps_hack/target/debug/deps --extern=deps_hack="deps_hack/target/debug/libdeps_hack.rlib" anvil.rs --crate-type=lib --time
+
     let cmd = std::process::Command::new(verus_path)
-        .arg("--crate-type=dylib")
+        .current_dir(proj_path)
+        .arg("-L")
+        .arg("dependency=deps_hack/target/debug/deps")
+        .arg("--extern=deps_hack=deps_hack/target/debug/libdeps_hack.rlib")
+        .arg("anvil.rs")
+        .arg("--crate-type=lib")
         .arg("--output-json")
         .arg("--time")
-        .arg(file_path)
-        .arg("--rlimit")
-        .arg("1000")
         .arg("--num-threads")
         .arg(num_threads.to_string())
+        .arg("--rlimit")
+        .arg("1000")
         .stdout(std::process::Stdio::piped())
         .output()
         .map_err(|e| (format!("failed to run verus: {}", e), 0))?;
 
     // print stderr
-    // eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
+    eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
 
     let output: JsonRoot = serde_json::from_slice(&cmd.stdout)
         .map_err(|e| (format!("failed to parse verus output: {}", e), 0))?;
