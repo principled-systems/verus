@@ -21,6 +21,7 @@ struct Config {
     no_external_by_default: bool,
     delimiters_are_layout: bool,
     permutations_dir: std::path::PathBuf,
+    lemma_call: bool,
 }
 
 fn main() {
@@ -37,6 +38,7 @@ fn main() {
         "the directory to store the source permutations to test",
         "DIR",
     );
+    opts.optflag("l", "lemma-call", "also consider lemma call");
     opts.optflag("", "json", "output as machine-readable json");
     opts.optflag("", "delimiters-are-layout", "consider delimiter-only lines as layout");
 
@@ -73,6 +75,7 @@ fn main() {
         no_external_by_default: matches.opt_present("no-external-by-default"),
         delimiters_are_layout: matches.opt_present("delimiters-are-layout"),
         permutations_dir,
+        lemma_call: matches.opt_present("l"),
     };
 
     match run(config, &std::path::Path::new(&deps_path)) {
@@ -198,6 +201,7 @@ struct FileData {
     lines: Box<[LineInfo]>,
     // each assert/assert_forall is some lines
     asserts: Vec<Lines>,
+    lemma_calls: Vec<Lines>,
 }
 
 fn to_lines_range(spanned: &impl Spanned) -> RangeInclusive<usize> {
@@ -259,6 +263,18 @@ impl FileData {
         let end = *lines.end();
         self.asserts.push(Lines { lines: (start..=end) });
     }
+
+    fn mark_lemma_call(&mut self, spaned: &impl Spanned) {
+        let lines = to_lines_range(spaned);
+        println!("lines: {:?}", lines);
+        let start = *lines.start();
+        let end = *lines.end();
+        // self.lemma_calls.push(Lines { lines: (start..=end) });
+        // get line content
+        let line_content: Vec<String> =
+            self.lines[start..=end].to_vec().into_iter().map(|l| l.text.clone()).collect();
+        println!("line_content: {:?}", line_content);
+    }
 }
 
 struct Visitor<'f> {
@@ -319,6 +335,12 @@ impl<'f> Visitor<'f> {
     fn mark_assert(&mut self, spanned: &impl Spanned) {
         if self.active() {
             self.file_stats.mark_assert(spanned);
+        }
+    }
+
+    fn mark_lemma_call(&mut self, spanned: &impl Spanned) {
+        if self.active() {
+            self.file_stats.mark_lemma_call(spanned);
         }
     }
 }
@@ -409,6 +431,27 @@ impl<'ast, 'f> syn_verus::visit::Visit<'ast> for Visitor<'f> {
     }
 
     fn visit_expr_call(&mut self, i: &'ast syn_verus::ExprCall) {
+        // if it's in proof mode, it will either be a proof code call or a spec call
+        if self.in_proof_directive > 0 {
+            // but it can't be spec code
+            if let Some(content_code_kind) = self.in_body {
+                if content_code_kind == CodeKind::Spec {
+                    // TODO: I think this is impossible?
+                    panic!();
+                    return;
+                }
+            }
+            if let syn_verus::Expr::Path(path) = &*i.func {
+                // TODO: maybe we can check for name in path
+                // though there are some lemma that doesn't have the name
+                // "lemma" in it
+                // for example K::cmp_properties
+                {
+                    self.mark_lemma_call(i);
+                }
+            }
+        }
+
         // Ghost / Tracked ?
         if let syn_verus::Expr::Path(path) = &*i.func {
             if let Some(wrapper_code_kind) = (path.path.segments.len() == 1)
@@ -1484,6 +1527,7 @@ fn process_file(config: Arc<Config>, input_path: &std::path::Path) -> Result<Fil
             .collect::<Vec<_>>()
             .into_boxed_slice(),
         asserts: Vec::new(),
+        lemma_calls: Vec::new(),
     };
     let mut visitor = Visitor {
         file_stats: &mut file_stats,
@@ -1706,6 +1750,16 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
         .iter()
         .map(|f| process_file(config.clone(), &root_path.join(f)).map(|fs| (f.clone(), fs)))
         .collect::<Result<Vec<_>, String>>()?;
+
+    // if lemma calls flag is set
+    if config.lemma_call {
+        for (path, file_data) in file_stats.iter() {
+            // print all lemma calls
+            println!("File: {:?}", path);
+            println!("{:?}", file_data.lemma_calls);
+        }
+        return Ok(());
+    }
 
     let num_asserts = file_stats.iter().map(|(_, fs)| fs.asserts.len()).sum::<usize>();
 
