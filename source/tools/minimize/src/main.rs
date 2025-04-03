@@ -1728,7 +1728,9 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
 
     // run verus for the first time
     let orig_t;
-    match run_verus(&root_path, 7) {
+    let orig_runtime_json =
+        std::env::current_dir().expect("Failed to get current directory").join("orig_runtime.json");
+    match run_verus(&root_path, 7, Some(&orig_runtime_json)) {
         Ok(t) => {
             orig_t = t;
         }
@@ -1762,15 +1764,18 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
 
         let mut max_lines: Option<(&PathBuf, &Lines)> = None;
 
-        for (rel_path, lines) in sample_asserts.iter() {
+        for (i, (rel_path, lines)) in sample_asserts.iter().enumerate() {
             // comment line out
             println!("commenting out line {:?} in {:?}", lines, root_path.join(rel_path));
 
             let file_to_mutate = config.permutations_dir.join(rel_path);
             let _ = comment_lines_out(&file_to_mutate, &lines.to_owned().into());
 
-            // run verus
-            if let Err((_, t)) = run_verus(&config.permutations_dir, 7) {
+            let json = std::env::current_dir()
+                .expect("Failed to get current directory")
+                .join(format!("runtime_{}.json", i));
+            if let Err((_, t)) = run_verus(&config.permutations_dir, 7, Some(&json)) {
+                println!("verus failed with {}", t);
                 if max_failure_t < t {
                     max_lines = Some((rel_path, lines));
                     max_failure_t = t;
@@ -1837,6 +1842,7 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
                     if run_verus(
                         &config.permutations_dir.join(std::path::Path::new(&file_no.to_string())),
                         4,
+                        None,
                     )
                     .is_err()
                     {
@@ -1925,7 +1931,11 @@ struct JsonRoot {
     times_ms: VerificationTime,
 }
 
-fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<u32, (String, u32)> {
+fn run_verus(
+    proj_path: &std::path::Path,
+    num_threads: usize,
+    json_file: Option<&std::path::Path>,
+) -> Result<u32, (String, u32)> {
     let file_path = proj_path.join("lib.rs");
 
     let verus_path = current_dir().unwrap().join("../../target-verus/release/verus");
@@ -1934,6 +1944,7 @@ fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<u32, (St
         .arg("--crate-type=dylib")
         .arg("--output-json")
         .arg("--time")
+        .arg("--time-expanded")
         .arg(file_path)
         .arg("--rlimit")
         .arg("1000")
@@ -1945,6 +1956,13 @@ fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<u32, (St
 
     // print stderr
     // eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
+
+    if let Some(json_file) = json_file {
+        let mut file = std::fs::File::create(json_file)
+            .map_err(|e| (format!("failed to create json file: {}", e), 0))?;
+        file.write_all(&cmd.stdout)
+            .map_err(|e| (format!("failed to write to json file: {}", e), 0))?;
+    }
 
     let output: JsonRoot = serde_json::from_slice(&cmd.stdout)
         .map_err(|e| (format!("failed to parse verus output: {}", e), 0))?;
