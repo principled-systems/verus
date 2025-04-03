@@ -439,6 +439,15 @@ pub(crate) fn build_triggers(
         polys: HashSet::new(),
     };
     get_manual_triggers(&mut state, exp)?;
+    if let Some(cur_fun) = &ctx.sst_cur_fun {
+        let cur_function = &ctx.func_map[cur_fun];
+        if
+            cur_function.x.name.path.krate.as_ref().map(|x| **x == &*crate::def::VERUSLIB).unwrap_or(false) &&
+            cur_function.x.name.path.segments.last().map(|x| x.starts_with("axiom_")).unwrap_or(false) {
+            state.auto_trigger = AutoType::All;
+            dbg!(crate::ast_util::path_as_friendly_rust_name(&cur_function.x.name.path));
+        }
+    }
     if state.triggers.len() > 0 || allow_empty {
         if state.auto_trigger != AutoType::None {
             return Err(error(

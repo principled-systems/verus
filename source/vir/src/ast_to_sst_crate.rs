@@ -1,6 +1,6 @@
 use crate::ast::{Fun, Krate, VirErr};
 use crate::ast_to_sst_func::function_to_sst;
-use crate::context::Ctx;
+use crate::context::{Ctx, FunctionCtx};
 use crate::sst::{FunctionSst, KrateSst, KrateSstX};
 use crate::sst_elaborate::{elaborate_function1, elaborate_function2};
 use std::collections::{HashMap, HashSet};
@@ -33,7 +33,9 @@ pub fn ast_to_sst_krate(
         for node in ctx.global.func_call_graph.get_scc_nodes(&scc_rep) {
             if let crate::recursion::Node::Fun(f) = &node {
                 if let Some(mut func_sst) = func_workmap.remove(f) {
+                    ctx.sst_cur_fun = Some(func_sst.x.name.clone());
                     elaborate_function1(ctx, diagnostics, &sst_infos, &mut func_sst)?;
+                    ctx.sst_cur_fun = None;
                     scc_functions.push(func_sst);
                 }
             }

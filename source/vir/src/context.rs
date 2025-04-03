@@ -95,6 +95,7 @@ pub struct Ctx {
     pub(crate) datatype_map: HashMap<Dt, Datatype>,
     pub(crate) trait_map: HashMap<Path, Trait>,
     pub fun: Option<FunctionCtx>,
+    pub sst_cur_fun: Option<Fun>,
     pub global: GlobalCtx,
     // In the very unlikely case where we get sha512 collisions
     // we use this to panic rather than introduce unsoundness.
@@ -605,6 +606,7 @@ impl Ctx {
             datatype_map,
             trait_map,
             fun: None,
+            sst_cur_fun: None,
             global,
             string_hashes,
             debug,
