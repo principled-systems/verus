@@ -609,7 +609,7 @@ impl Visitor {
             let publish_span = sig.publish.span();
             stmts.push(stmt_with_semi!(
                 publish_span =>
-                compile_error!("only `spec` functions can be marked `open` or `closed`")
+                compile_error!("only `spec` functions can be marked `open`, `closed`, or `uninterp`")
             ));
         }
 
@@ -631,19 +631,37 @@ impl Visitor {
             Publish::Default => vec![],
             Publish::Closed(o) => vec![mk_verus_attr(o.token.span, quote! { closed })],
             Publish::Open(o) => vec![mk_verus_attr(o.token.span, quote! { open })],
-            Publish::OpenRestricted(_) => {
-                unimplemented!("TODO: support open(...)")
+            Publish::Uninterp(o) => vec![mk_verus_attr(o.token.span, quote! { uninterp })],
+            Publish::OpenRestricted(o) => {
+                let in_token = &o.in_token;
+                let p = &o.path;
+                stmts.push(stmt_with_semi!(
+                    o.path.span() =>
+                    #[verus::internal(open_visibility_qualifier)]
+                    pub(#in_token#p) use crate as _
+                ));
+                vec![mk_verus_attr(o.open_token.span, quote! { open })]
             }
         };
 
         let (unimpl, ext_attrs) = match (&sig.mode, semi_token, is_trait) {
-            (FnMode::Spec(_) | FnMode::SpecChecked(_), Some(semi), false) => (
-                vec![Stmt::Expr(
+            (FnMode::Spec(_) | FnMode::SpecChecked(_), Some(semi), false) => {
+                // uninterpreted function
+                let unimpl = vec![Stmt::Expr(
                     Expr::Verbatim(quote_spanned!(semi.span => unimplemented!())),
                     None,
-                )],
-                vec![mk_verus_attr(semi.span, quote! { external_body })],
-            ),
+                )];
+                #[cfg(verus_keep_ghost)]
+                if !matches!(&sig.publish, Publish::Uninterp(_)) {
+                    proc_macro::Diagnostic::spanned(
+                        sig.span().unwrap(),
+                        proc_macro::Level::Warning,
+                        "uninterpreted functions (`spec` functions defined without a body) need to be marked as `uninterp`\nthis will become a hard error in the future",
+                    )
+                    .emit();
+                }
+                (unimpl, vec![mk_verus_attr(semi.span, quote! { external_body })])
+            }
             _ => (vec![], vec![]),
         };
 
@@ -773,6 +791,7 @@ impl Visitor {
             (_, _, Publish::Default) => vec![mk_verus_attr(span, quote! { open })],
             (_, _, Publish::Closed(o)) => vec![mk_verus_attr(o.token.span, quote! { closed })],
             (_, _, Publish::Open(o)) => vec![mk_verus_attr(o.token.span, quote! { open })],
+            (_, _, Publish::Uninterp(o)) => vec![mk_verus_attr(o.token.span, quote! { uninterp })],
             (_, _, Publish::OpenRestricted(_)) => {
                 unimplemented!("TODO: support open(...)")
             }
@@ -4001,6 +4020,66 @@ pub(crate) fn rewrite_expr(
     };
     visitor.visit_expr_mut(&mut expr);
     expr.to_tokens(&mut new_stream);
+    proc_macro::TokenStream::from(new_stream)
+}
+
+struct Stmts(Vec<Stmt>);
+
+impl Parse for Stmts {
+    fn parse(input: ParseStream) -> syn_verus::Result<Self> {
+        Block::parse_within(input).map(|stmts| Stmts(stmts))
+    }
+}
+
+pub(crate) fn rewrite_proof_decl(
+    erase_ghost: EraseGhost,
+    stream: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let stream = rejoin_tokens(stream);
+    let Stmts(stmts) = parse_macro_input!(stream as Stmts);
+    let mut new_stream = TokenStream::new();
+    let mut visitor = Visitor {
+        erase_ghost,
+        use_spec_traits: true,
+        inside_ghost: 0,
+        inside_type: 0,
+        inside_external_code: 0,
+        inside_const: false,
+        inside_arith: InsideArith::None,
+        assign_to: false,
+        rustdoc: env_rustdoc(),
+    };
+    for mut ss in stmts {
+        match ss {
+            Stmt::Local(Local { tracked: None, ghost: None, .. }) => {
+                return quote_spanned!(ss.span() => compile_error!("Exec local is not allowed in proof_decl")).into();
+            }
+            Stmt::Local(_) => {
+                let (skip, mut new_stmts) = visitor.visit_stmt_extend(&mut ss);
+                if !skip {
+                    new_stmts.insert(0, ss)
+                }
+                for mut ss in new_stmts {
+                    visitor.visit_stmt_mut(&mut ss);
+                    ss.to_tokens(&mut new_stream);
+                }
+            }
+            _ => {
+                let span = ss.span();
+                let mut proof_expr = Expr::Unary(ExprUnary {
+                    attrs: vec![],
+                    expr: Box::new(Expr::Block(ExprBlock {
+                        attrs: vec![],
+                        label: None,
+                        block: Block { brace_token: Brace(span), stmts: vec![ss] },
+                    })),
+                    op: UnOp::Proof(Token![proof](span)),
+                });
+                visitor.visit_expr_mut(&mut proof_expr);
+                proof_expr.to_tokens(&mut new_stream);
+            }
+        };
+    }
     proc_macro::TokenStream::from(new_stream)
 }
 

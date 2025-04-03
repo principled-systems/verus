@@ -1936,7 +1936,7 @@ fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<u32, (St
         .arg("--time")
         .arg(file_path)
         .arg("--rlimit")
-        .arg("20")
+        .arg("1000")
         .arg("--num-threads")
         .arg(num_threads.to_string())
         .stdout(std::process::Stdio::piped())

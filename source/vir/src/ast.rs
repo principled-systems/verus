@@ -103,6 +103,14 @@ pub struct Visibility {
     pub restricted_to: Option<Path>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, ToDebugSNode, PartialEq, Eq)]
+pub enum BodyVisibility {
+    Uninterpreted,
+    /// None for pub
+    /// Some(path) means visible to path and path's descendents
+    Visibility(Visibility),
+}
+
 /// Describes whether a variable, function, etc. is compiled or just used for verification
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Mode {
@@ -564,6 +572,8 @@ pub enum HeaderExprX {
     NoUnwind,
     /// This function will not unwind if the given condition holds (function of arguments)
     NoUnwindWhen(Expr),
+    /// The visibility used in, e.g., `open(crate)`
+    OpenVisibilityQualifier(Visibility),
 }
 
 /// Primitive constant values
@@ -1076,7 +1086,7 @@ pub struct FunctionX {
     /// Access control (public/private)
     pub visibility: Visibility,
     /// Controlled by 'open'. (Only applicable to spec functions.)
-    pub body_visibility: Visibility,
+    pub body_visibility: BodyVisibility,
     /// Controlled by 'opaque/opaque_outside_module'. (Only applicable to spec functions.)
     pub opaqueness: Opaqueness,
     /// Owning module
