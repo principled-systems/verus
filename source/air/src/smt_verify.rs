@@ -41,7 +41,7 @@ fn label_asserts<'ctx>(
             )),
             _ => expr.clone(),
         },
-        ExprX::LabeledAssertion(assert_id, error, filter, expr) => {
+        ExprX::LabeledAssertion(assert_id, error, filter, here_focus, expr) => {
             let label = Arc::new(PREFIX_LABEL.to_string() + &infos.len().to_string());
             let decl = Arc::new(DeclX::Const(label.clone(), Arc::new(TypX::Bool)));
             let assertion_info = AssertionInfo {
@@ -51,6 +51,7 @@ fn label_asserts<'ctx>(
                 filter: filter.clone(),
                 decl,
                 disabled: false,
+                here_focus: here_focus.clone(),
             };
             infos.push(assertion_info);
             let lhs = Arc::new(ExprX::Var(label));
@@ -423,8 +424,9 @@ fn smt_get_model(
 
     if smt_output.iter().any(|line| line.contains("model is not available")) {
         // when we don't use incremental solving, sometime the model is not available when the z3 result is unknown
+        let here_focus = infos.iter().find_map(|info| info.here_focus.clone());
         context.state = ContextState::FoundInvalid(infos, None);
-        return ValidityResult::Invalid(None, None, None);
+        return ValidityResult::Invalid(None, None, None, here_focus);
     };
 
     let model =
@@ -476,9 +478,10 @@ fn smt_get_model(
     // to the function precondition)
 
     let error = discovered_error.error;
+    let here_focus = discovered_error.here_focus.clone();
     let e = context.message_interface.append_labels(&error, &discovered_additional_info);
     context.state = ContextState::FoundInvalid(infos, Some(air_model.clone()));
-    ValidityResult::Invalid(Some(air_model), Some(e), discovered_assert_id.unwrap())
+    ValidityResult::Invalid(Some(air_model), Some(e), discovered_assert_id.unwrap(), here_focus)
 }
 
 pub(crate) fn smt_check_query<'ctx>(
@@ -503,7 +506,7 @@ pub(crate) fn smt_check_query<'ctx>(
 
     // after lowering, there should be just one assertion
     let assertion = match &*query.assertion {
-        StmtX::Assert(_, _, _, expr) => expr,
+        StmtX::Assert(_, _, _, _, expr) => expr,
         _ => panic!("internal error: query not lowered"),
     };
     let assertion = elim_zero_args_expr(assertion);
@@ -523,8 +526,5 @@ pub(crate) fn smt_check_query<'ctx>(
     // check assertion
     let not_expr = Arc::new(ExprX::Unary(UnaryOp::Not, labeled_assertion));
     context.smt_log.log_assert(&None, &not_expr);
-    let result =
-        smt_check_assertion(context, diagnostics, infos, air_model, false, report_long_running);
-
-    result
+    smt_check_assertion(context, diagnostics, infos, air_model, false, report_long_running)
 }

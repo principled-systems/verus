@@ -1,5 +1,6 @@
 use crate::ast::{
-    AssertId, AxiomInfoFilter, Command, CommandX, Decl, Ident, Query, Typ, TypeError, Typs,
+    AssertId, AxiomInfoFilter, Command, CommandX, Decl, HereFocus, Ident, Query, Typ, TypeError,
+    Typs,
 };
 use crate::closure::ClosureTerm;
 use crate::emitter::Emitter;
@@ -26,6 +27,7 @@ pub(crate) struct AssertionInfo {
     pub(crate) filter: AxiomInfoFilter,
     pub(crate) decl: Decl,
     pub(crate) disabled: bool,
+    pub(crate) here_focus: Option<HereFocus>,
 }
 
 #[derive(Clone, Debug)]
@@ -46,7 +48,7 @@ pub enum UsageInfo {
 #[derive(Debug)]
 pub enum ValidityResult {
     Valid(#[cfg(feature = "axiom-usage-info")] UsageInfo),
-    Invalid(Option<Model>, Option<ArcDynMessage>, Option<AssertId>),
+    Invalid(Option<Model>, Option<ArcDynMessage>, Option<AssertId>, Option<HereFocus>),
     Canceled,
     TypeError(TypeError),
     UnexpectedOutput(String),
@@ -476,6 +478,7 @@ impl Context {
             Ok(query) => query,
             Err(err) => return ValidityResult::TypeError(err),
         };
+        let query = crate::handle_here::handle_query(&query);
         let (query, snapshots, local_vars) = crate::var_to_const::lower_query(&query);
         self.air_middle_log.log_query(&query);
         let query = crate::block_to_assert::lower_query(message_interface, &query);

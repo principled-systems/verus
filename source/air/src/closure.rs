@@ -680,7 +680,7 @@ fn simplify_expr(ctxt: &mut Context, state: &mut State, expr: &Expr) -> (Typ, Ex
                 simplify_choose(ctxt, state, binders, triggers, qid, cond, e1)
             }
         },
-        ExprX::LabeledAssertion(assert_id, l, filter, e1) => {
+        ExprX::LabeledAssertion(assert_id, l, filter, focus, e1) => {
             let (es, ts) = simplify_exprs_ref(ctxt, state, &vec![e1]);
             let (typ, _) = ts[0].clone();
             let (es, t) = enclose(state, App::LabeledAssertion, es, ts);
@@ -690,6 +690,7 @@ fn simplify_expr(ctxt: &mut Context, state: &mut State, expr: &Expr) -> (Typ, Ex
                     assert_id.clone(),
                     l.clone(),
                     filter.clone(),
+                    focus.clone(),
                     es[0].clone(),
                 )),
                 t,
@@ -710,10 +711,17 @@ fn simplify_stmt_rec(ctxt: &mut Context, state: &mut State, stmt: &Stmt) -> Stmt
             let (_, expr, _) = simplify_expr(ctxt, state, expr);
             Arc::new(StmtX::Assume(expr))
         }
-        StmtX::Assert(assert_id, span, filter, expr) => {
+        StmtX::Assert(assert_id, span, filter, focus, expr) => {
             let (_, expr, _) = simplify_expr(ctxt, state, expr);
-            Arc::new(StmtX::Assert(assert_id.clone(), span.clone(), filter.clone(), expr))
+            Arc::new(StmtX::Assert(
+                assert_id.clone(),
+                span.clone(),
+                filter.clone(),
+                focus.clone(),
+                expr,
+            ))
         }
+        StmtX::HereMarker => stmt.clone(),
         StmtX::Havoc(_) => stmt.clone(),
         StmtX::Assign(x, expr) => {
             let (_, expr, _) = simplify_expr(ctxt, state, expr);

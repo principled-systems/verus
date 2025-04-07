@@ -107,7 +107,7 @@ fn make_query(
     for (span, ens) in ensures_air.iter() {
         // This error seems to be ignored, the message below is the important one
         let error = error(span, format!("bitvector assertion not satisfied"));
-        let ens_stmt = air::ast::StmtX::Assert(None, error, None, ens.clone());
+        let ens_stmt = air::ast::StmtX::Assert(None, error, None, None, ens.clone());
         air_body.push(Arc::new(ens_stmt));
     }
     let assertion = crate::sst_to_air::one_stmt(air_body);

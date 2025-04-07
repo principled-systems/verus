@@ -137,6 +137,9 @@ pub enum BindX {
 
 pub type AxiomInfoFilter = Option<Ident>;
 
+#[derive(Debug, Clone)]
+pub struct HereFocus;
+
 pub type Expr = Arc<ExprX>;
 pub type Exprs = Arc<Vec<Expr>>;
 #[derive(Debug)]
@@ -158,7 +161,7 @@ pub enum ExprX {
     // Sometimes an axiom will have additional error messages. If an assert fails
     // and this axiom was relevant, then we append the error labels to the Message.
     LabeledAxiom(Vec<ArcDynMessage>, AxiomInfoFilter, Expr),
-    LabeledAssertion(Option<AssertId>, ArcDynMessage, AxiomInfoFilter, Expr),
+    LabeledAssertion(Option<AssertId>, ArcDynMessage, AxiomInfoFilter, Option<HereFocus>, Expr),
 }
 
 pub type AssertId = Arc<Vec<u64>>;
@@ -168,7 +171,8 @@ pub type Stmts = Arc<Vec<Stmt>>;
 #[derive(Debug)]
 pub enum StmtX {
     Assume(Expr),
-    Assert(Option<AssertId>, ArcDynMessage, AxiomInfoFilter, Expr),
+    Assert(Option<AssertId>, ArcDynMessage, AxiomInfoFilter, Option<HereFocus>, Expr),
+    HereMarker,
     Havoc(Ident),
     Assign(Ident, Expr),
     // create a named snapshot of the state of the variables

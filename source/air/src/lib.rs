@@ -16,6 +16,7 @@ pub mod printer;
 mod block_to_assert;
 mod closure;
 mod def;
+mod handle_here;
 mod smt_verify;
 mod tests;
 mod typecheck;

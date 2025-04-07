@@ -80,9 +80,8 @@ fn update_breaks_to_versions(
     stmt: &Stmt,
 ) -> Stmt {
     match &**stmt {
-        StmtX::Assume(_) | StmtX::Assert(..) => stmt.clone(),
-        StmtX::Havoc(_) | StmtX::Assign(..) => stmt.clone(),
-        StmtX::Snapshot(_) => stmt.clone(),
+        StmtX::Assume(_) | StmtX::Assert(..) | StmtX::HereMarker => stmt.clone(),
+        StmtX::Havoc(_) | StmtX::Assign(..) | StmtX::Snapshot(_) => stmt.clone(),
         StmtX::DeadEnd(s) => {
             let s = update_breaks_to_versions(label, all_versions, versions_to, break_i, s);
             Arc::new(StmtX::DeadEnd(s))
@@ -136,7 +135,7 @@ fn lower_stmt(
         lower_expr_visitor(versions, snapshots, e)
     });
     match &*stmt {
-        StmtX::Assume(_) | StmtX::Assert(..) => stmt,
+        StmtX::Assume(_) | StmtX::Assert(..) | StmtX::HereMarker => stmt,
         StmtX::Havoc(x) | StmtX::Assign(x, _) => {
             let n = find_version(&versions, x);
             let typ = types[x].clone();

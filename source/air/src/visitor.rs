@@ -106,10 +106,15 @@ pub(crate) fn map_expr_visitor<F: FnMut(&Expr) -> Expr>(expr: &Expr, f: &mut F) 
             let expr = Arc::new(ExprX::Bind(Arc::new(bind), e1));
             f(&expr)
         }
-        ExprX::LabeledAssertion(aid, l, filter, e1) => {
+        ExprX::LabeledAssertion(aid, l, filter, focus, e1) => {
             let expr1 = map_expr_visitor(e1, f);
-            let expr =
-                Arc::new(ExprX::LabeledAssertion(aid.clone(), l.clone(), filter.clone(), expr1));
+            let expr = Arc::new(ExprX::LabeledAssertion(
+                aid.clone(),
+                l.clone(),
+                filter.clone(),
+                focus.clone(),
+                expr1,
+            ));
             f(&expr)
         }
         ExprX::LabeledAxiom(l, filter, e1) => {
@@ -126,10 +131,17 @@ pub(crate) fn map_stmt_expr_visitor<F: FnMut(&Expr) -> Expr>(stmt: &Stmt, f: &mu
             let expr = map_expr_visitor(e, f);
             Arc::new(StmtX::Assume(f(&expr)))
         }
-        StmtX::Assert(aid, span, filter, e) => {
+        StmtX::Assert(aid, span, filter, focus, e) => {
             let expr = map_expr_visitor(e, f);
-            Arc::new(StmtX::Assert(aid.clone(), span.clone(), filter.clone(), f(&expr)))
+            Arc::new(StmtX::Assert(
+                aid.clone(),
+                span.clone(),
+                filter.clone(),
+                focus.clone(),
+                f(&expr),
+            ))
         }
+        StmtX::HereMarker => stmt.clone(),
         StmtX::Havoc(_) => stmt.clone(),
         StmtX::Assign(x, e) => {
             let expr = map_expr_visitor(e, f);

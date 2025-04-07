@@ -1585,7 +1585,7 @@ fn stm_to_stmts(ctx: &Ctx, state: &mut State, stm: &Stm) -> Result<Vec<Stmt>, Vi
 
                 let error = error(&stm.span, description);
                 let filter = Some(fun_to_air_ident(&func.x.name));
-                stmts.push(Arc::new(StmtX::Assert(assert_id.clone(), error, filter, e_req)));
+                stmts.push(Arc::new(StmtX::Assert(assert_id.clone(), error, filter, None, e_req)));
             }
 
             let callee_unwind_spec = func.x.unwind_spec_or_default();
@@ -1640,7 +1640,7 @@ fn stm_to_stmts(ctx: &Ctx, state: &mut State, stm: &Stm) -> Result<Vec<Stmt>, Vi
                     )
                 };
                 let e = mk_implies(&e1, &e2);
-                stmts.push(Arc::new(StmtX::Assert(None, error, None, e)));
+                stmts.push(Arc::new(StmtX::Assert(None, error, None, None, e)));
             }
 
             let typ_args: Vec<Expr> = typs.iter().map(typ_to_ids).flatten().collect();
@@ -1804,7 +1804,7 @@ fn stm_to_stmts(ctx: &Ctx, state: &mut State, stm: &Stm) -> Result<Vec<Stmt>, Vi
             if ctx.debug {
                 state.map_span(&stm, SpanKind::Full);
             }
-            vec![Arc::new(StmtX::Assert(assert_id.clone(), error, None, air_expr))]
+            vec![Arc::new(StmtX::Assert(assert_id.clone(), error, None, None, air_expr))]
         }
         StmX::AssertCompute(..) => {
             panic!("AssertCompute should be removed by sst_elaborate")
@@ -1864,7 +1864,8 @@ fn stm_to_stmts(ctx: &Ctx, state: &mut State, stm: &Stm) -> Result<Vec<Stmt>, Vi
                             }
                         };
 
-                        let ens_stmt = StmtX::Assert(assert_id.clone(), error, None, ens.clone());
+                        let ens_stmt =
+                            StmtX::Assert(assert_id.clone(), error, None, None, ens.clone());
                         stmts.push(Arc::new(ens_stmt));
                     }
                 }
@@ -2046,7 +2047,7 @@ fn stm_to_stmts(ctx: &Ctx, state: &mut State, stm: &Stm) -> Result<Vec<Stmt>, Vi
                             and use 'ensures' for what is true at the break)";
                         error = error.secondary_label(span, msg);
                     }
-                    stmts.push(Arc::new(StmtX::Assert(None, error, None, inv.clone())));
+                    stmts.push(Arc::new(StmtX::Assert(None, error, None, None, inv.clone())));
                 }
                 let decrease = &loop_info.decrease;
                 if !is_break && decrease.len() > 0 {
@@ -2069,7 +2070,7 @@ fn stm_to_stmts(ctx: &Ctx, state: &mut State, stm: &Stm) -> Result<Vec<Stmt>, Vi
                     )?;
                     let expr = exp_to_expr(ctx, &dec_exp, expr_ctxt)?;
                     let error = error(&stm.span, crate::def::DEC_FAIL_LOOP_CONTINUE);
-                    let dec_stmt = StmtX::Assert(None, error, None, expr);
+                    let dec_stmt = StmtX::Assert(None, error, None, None, expr);
                     stmts.push(Arc::new(dec_stmt));
                 }
             }
@@ -2329,7 +2330,7 @@ fn stm_to_stmts(ctx: &Ctx, state: &mut State, stm: &Stm) -> Result<Vec<Stmt>, Vi
                     if let Some(msg) = msg {
                         error = error.secondary_label(span, &**msg);
                     }
-                    let inv_stmt = StmtX::Assert(None, error, None, inv.clone());
+                    let inv_stmt = StmtX::Assert(None, error, None, None, inv.clone());
                     air_body.push(Arc::new(inv_stmt));
                 }
                 if decrease.len() > 0 {
@@ -2342,7 +2343,7 @@ fn stm_to_stmts(ctx: &Ctx, state: &mut State, stm: &Stm) -> Result<Vec<Stmt>, Vi
                     )?;
                     let expr = exp_to_expr(ctx, &dec_exp, expr_ctxt)?;
                     let error = error(&stm.span, crate::def::DEC_FAIL_LOOP_END);
-                    let dec_stmt = StmtX::Assert(None, error, None, expr);
+                    let dec_stmt = StmtX::Assert(None, error, None, None, expr);
                     air_body.push(Arc::new(dec_stmt));
                 }
             }
@@ -2389,7 +2390,7 @@ fn stm_to_stmts(ctx: &Ctx, state: &mut State, stm: &Stm) -> Result<Vec<Stmt>, Vi
                     if let Some(msg) = msg {
                         error = error.secondary_label(span, &**msg);
                     }
-                    let inv_stmt = StmtX::Assert(None, error, None, inv.clone());
+                    let inv_stmt = StmtX::Assert(None, error, None, None, inv.clone());
                     stmts.push(Arc::new(inv_stmt));
                 }
             }
@@ -2517,10 +2518,9 @@ fn stm_to_stmts(ctx: &Ctx, state: &mut State, stm: &Stm) -> Result<Vec<Stmt>, Vi
                 }
             }
         }
-        StmX::Here { .. } => {
-            // TODO: lower `here` marker to AIR
-            dbg!(&stm);
-            Vec::new()
+        StmX::Here {} => {
+            let here = StmtX::HereMarker;
+            vec![Arc::new(here)]
         }
     };
     Ok(result)

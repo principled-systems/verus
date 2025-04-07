@@ -28,14 +28,14 @@ pub fn focus_command_on_assert_id(command: &Command, assert_id: &AssertId) -> Op
 
 pub fn focus_stmt_on_assert_id(stmt: &Stmt, assert_id: &AssertId) -> (Stmt, bool) {
     match &**stmt {
-        StmtX::Assert(assert_id_opt, _msg, _filter, _e) => {
+        StmtX::Assert(assert_id_opt, _msg, _filter, _focus, _e) => {
             if assert_id_opt == &Some(assert_id.clone()) {
                 (stmt.clone(), true)
             } else {
                 (Arc::new(StmtX::Block(Arc::new(vec![]))), false)
             }
         }
-        StmtX::Assume(..) => (stmt.clone(), false),
+        StmtX::Assume(..) | StmtX::HereMarker => (stmt.clone(), false),
         StmtX::Havoc(..) | StmtX::Assign(..) | StmtX::Snapshot(..) => (stmt.clone(), false),
         StmtX::DeadEnd(stmt) => {
             let (stmt, found) = focus_stmt_on_assert_id(stmt, assert_id);

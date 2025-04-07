@@ -18,8 +18,8 @@ use rustc_interface::interface::Compiler;
 use rustc_session::config::ErrorOutputType;
 
 use vir::messages::{
-    message, note, note_bare, warning, warning_bare, Message, MessageLabel, MessageLevel, MessageX,
-    ToAny,
+    error_with_label, message, note, note_bare, warning, warning_bare, Message, MessageLabel,
+    MessageLevel, MessageX, ToAny,
 };
 
 use num_format::{Locale, ToFormattedString};
@@ -520,6 +520,7 @@ impl Verifier {
         self.time_vir_rust_to_vir += other.time_vir_rust_to_vir;
         self.bucket_stats.extend(other.bucket_stats);
         self.func_times.extend(other.func_times);
+        self.unfocused_fails += other.unfocused_fails;
     }
 
     fn get_bucket<'a>(&'a self, bucket_id: &BucketId) -> &'a Bucket {
@@ -852,8 +853,12 @@ impl Verifier {
                     timed_out = true;
                     break;
                 }
-                ValidityResult::Invalid(None, error, _)
-                | ValidityResult::Invalid(_, error @ None, _) => {
+                ValidityResult::Invalid(None, error, _, here)
+                | ValidityResult::Invalid(_, error @ None, _, here) => {
+                    if self.here_marker.is_some() && here.is_none() {
+                        self.unfocused_fails += 1;
+                        break;
+                    }
                     if is_first_check && level == Some(MessageLevel::Error) {
                         self.count_errors += 1;
                         invalidity = true;
@@ -872,49 +877,65 @@ impl Verifier {
                     }
                     break;
                 }
-                ValidityResult::Invalid(Some(air_model), Some(error), assert_id_opt) => {
+                ValidityResult::Invalid(Some(air_model), Some(error), assert_id_opt, here) => {
                     if let Some(assert_id) = assert_id_opt {
                         failed_assert_ids.push(assert_id.clone());
+                    }
+
+                    if let Some(marker) = &self.here_marker {
+                        if marker.function.x.name != context.fun {
+                            // once we found the first failure in an unfocused function,
+                            // there is no point in continuing
+                            self.unfocused_fails += 1;
+                            break;
+                        }
                     }
 
                     if is_first_check && level == Some(MessageLevel::Error) {
                         self.count_errors += 1;
                         self.func_fails.insert(context.fun.clone());
                         invalidity = true;
-                        if let Some(hint) = hint_upon_failure.take() {
-                            reporter.report_as(&hint.to_any(), MessageLevel::Note);
-                        }
-                    }
-                    if self.expand_flag {
-                        invalidity = true;
-                    }
-                    let error: Message = error.downcast().unwrap();
-                    if let Some(level) = level {
-                        if !self.expand_flag {
-                            if let Some(collected) = &mut *diagnostics_to_report.borrow_mut() {
-                                collected.as_mut().push((error.clone(), level));
-                            } else {
-                                reporter.report_as(&error.clone().to_any(), level);
+
+                        if let Some(..) = here {
+                            if let Some(hint) = hint_upon_failure.take() {
+                                reporter.report_as(&hint.to_any(), MessageLevel::Note);
                             }
                         }
                     }
 
-                    if level == Some(MessageLevel::Error) {
-                        if self.args.expand_errors {
-                            assert!(!self.expand_flag);
+                    if self.expand_flag {
+                        invalidity = true;
+                    }
+
+                    if here.is_some() || self.here_marker.is_none() {
+                        let error: Message = error.downcast().unwrap();
+                        if let Some(level) = level {
+                            if !self.expand_flag {
+                                if let Some(collected) = &mut *diagnostics_to_report.borrow_mut() {
+                                    collected.as_mut().push((error.clone(), level));
+                                } else {
+                                    reporter.report_as(&error.clone().to_any(), level);
+                                }
+                            }
                         }
 
-                        if self.args.debugger {
-                            if let Some(source_map) = source_map {
-                                let mut debugger =
-                                    Debugger::new(air_model, assign_map, snap_map, source_map);
-                                debugger.start_shell(air_context);
-                            } else {
-                                reporter.report(&message(
-                                    MessageLevel::Warning,
-                                    "no source map available for debugger. Try running single threaded.",
-                                    &context.span,
-                                ).to_any());
+                        if level == Some(MessageLevel::Error) {
+                            if self.args.expand_errors {
+                                assert!(!self.expand_flag);
+                            }
+
+                            if self.args.debugger {
+                                if let Some(source_map) = source_map {
+                                    let mut debugger =
+                                        Debugger::new(air_model, assign_map, snap_map, source_map);
+                                    debugger.start_shell(air_context);
+                                } else {
+                                    reporter.report(&message(
+                                        MessageLevel::Warning,
+                                        "no source map available for debugger. Try running single threaded.",
+                                        &context.span,
+                                    ).to_any());
+                                }
                             }
                         }
                     }
@@ -922,6 +943,7 @@ impl Verifier {
                     if self.args.multiple_errors == 0 {
                         break;
                     }
+
                     is_first_check = false;
                     if !only_check_earlier {
                         checks_remaining -= 1;
@@ -2491,6 +2513,24 @@ impl Verifier {
                     bucket_id,
                     global_ctx,
                 )?;
+            }
+        }
+
+        if let Some(marker) = &self.here_marker {
+            if self.unfocused_fails > 0 {
+                let note = format!("there are {} unfocused failures", self.unfocused_fails);
+
+                if self.count_errors > 0 {
+                    let msg = note_bare(note);
+                    reporter.report(&msg.to_any());
+                } else {
+                    let span = &marker.expr.span;
+                    let label = "silenced by this here marker";
+                    let msg = error_with_label(span, note, label);
+                    reporter.report(&msg.to_any());
+                }
+
+                self.count_errors += self.unfocused_fails;
             }
         }
 
