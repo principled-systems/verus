@@ -1760,6 +1760,10 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
             let file_stats = file_stats.clone();
             let pb = pb.clone();
             let original_file = root_path.join(next_file.clone());
+
+            // Anvil
+            let deps_hack_path = root_path.join("deps_hack");
+
             running.push(std::thread::spawn(move || {
                 std::fs::create_dir_all(
                     permutations_dir.join(std::path::Path::new(&file_no.to_string())),
@@ -1775,6 +1779,18 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
                     }
                     std::fs::write(&file_path, file_data.contents.clone()).expect("write file");
                 }
+
+                // Anvil: Create deps_hack_dst directory and copy deps_hack directory using fs_extra
+                let deps_hack_src = deps_hack_path.clone();
+                let deps_hack_dst = permutations_dir
+                    .join(std::path::Path::new(&file_no.to_string()));
+                if !deps_hack_src.exists() {
+                    panic!("where is deps_hack")
+                }
+                // copying
+                std::fs::create_dir_all(&deps_hack_dst).expect("create deps_hack_dst directory");
+                fs_extra::dir::copy(&deps_hack_src, &deps_hack_dst, &fs_extra::dir::CopyOptions::new())
+                    .expect("copy deps_hack directory");
 
                 let file_to_mutate = permutations_dir
                     .join(std::path::Path::new(&file_no.to_string()))
@@ -1887,17 +1903,35 @@ fn run_verus(
     num_threads: usize,
     json_file: Option<&std::path::Path>,
 ) -> Result<u32, (String, u32)> {
-    let file_path = proj_path.join("lib.rs");
+    // let file_path = proj_path.join("lib.rs");
 
     let verus_path = current_dir().unwrap().join("../../target-verus/release/verus");
 
+    // let cmd = std::process::Command::new(verus_path)
+    //     .arg("--crate-type=dylib")
+    //     .arg("--output-json")
+    //     .arg("--time")
+    //     .arg(file_path)
+    //     .arg("--rlimit")
+    //     .arg("20")
+    //     .arg("--num-threads")
+    //     .arg(num_threads.to_string())
+    //     .stdout(std::process::Stdio::piped())
+    //     .output()
+    //     .map_err(|e| (format!("failed to run verus: {}", e), 0))?;
+
     let cmd = std::process::Command::new(verus_path)
-        .arg("--crate-type=dylib")
+        .current_dir(proj_path)
+        .arg("-L")
+        .arg("dependency=deps_hack/target/debug/deps")
+        .arg("--extern=deps_hack=deps_hack/target/debug/libdeps_hack.rlib")
+        .arg("anvil.rs")
+        .arg("--rlimit")
+        .arg("90")
+        .arg("--crate-type=lib")
+        .arg("--no-lifetime") // https://github.com/anvil-verifier/anvil/issues/599
         .arg("--output-json")
         .arg("--time")
-        .arg(file_path)
-        .arg("--rlimit")
-        .arg("20")
         .arg("--num-threads")
         .arg(num_threads.to_string())
         .stdout(std::process::Stdio::piped())
