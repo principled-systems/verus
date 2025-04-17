@@ -1720,7 +1720,7 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     );
 
     // run verus for the first time
-    if let Err(e) = run_verus(&root_path, 7) {
+    if let Err((e, _)) = run_verus(&root_path, 7, None) {
         return Err(format!("verus failed to verify before minimization: {}", e));
     }
 
@@ -1767,16 +1767,24 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
                     .join(next_file);
                 for lines in next_file_data.asserts.iter() {
                     pb.inc(1);
-                    println!("commenting out line {:?} in {:?}", lines, file_to_mutate);
                     let _ = comment_lines_out(&file_to_mutate, &lines.to_owned().into());
-                    if run_verus(
+                    match run_verus(
                         &config.permutations_dir.join(std::path::Path::new(&file_no.to_string())),
                         4,
-                    )
-                    .is_err()
-                    {
-                        println!("verus failed, reverting");
-                        let _ = uncomment_lines(&file_to_mutate, &lines.to_owned().into());
+                        None,
+                    ) {
+                        Ok(t) => {
+                            println!("commenting out line {:?} in {:?}", lines, file_to_mutate);
+                            println!(
+                                "verus succeeded with time: {}ms, keeping it commented out",
+                                t
+                            );
+                        }
+                        Err((_, t)) => {
+                            println!("commenting out line {:?} in {:?}", lines, file_to_mutate);
+                            println!("verus failed with time: {}ms, reverting", t);
+                            let _ = uncomment_lines(&file_to_mutate, &lines.to_owned().into());
+                        }
                     }
                 }
                 println!("minimization of {} is completed", file_to_mutate.display());
@@ -1860,7 +1868,11 @@ struct JsonRoot {
     times_ms: VerificationTime,
 }
 
-fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<(), String> {
+fn run_verus(
+    proj_path: &std::path::Path,
+    num_threads: usize,
+    json_file: Option<&std::path::Path>,
+) -> Result<u32, (String, u32)> {
     let file_path = proj_path.join("lib.rs");
 
     let verus_path = current_dir().unwrap().join("../../target-verus/release/verus");
@@ -1876,17 +1888,24 @@ fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<(), Stri
         .arg(num_threads.to_string())
         .stdout(std::process::Stdio::piped())
         .output()
-        .map_err(|e| format!("failed to run verus: {}", e))?;
+        .map_err(|e| (format!("failed to run verus: {}", e), 0))?;
 
     // print stderr
     // eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
 
+    if let Some(json_file) = json_file {
+        let mut file = std::fs::File::create(json_file)
+            .map_err(|e| (format!("failed to create json file: {}", e), 0))?;
+        file.write_all(&cmd.stdout)
+            .map_err(|e| (format!("failed to write to json file: {}", e), 0))?;
+    }
+
     let output: JsonRoot = serde_json::from_slice(&cmd.stdout)
-        .map_err(|e| format!("failed to parse verus output: {}", e))?;
+        .map_err(|e| (format!("failed to parse verus output: {}", e), 0))?;
+
     if output.verification_results.success {
-        println!("verus succeeded with time: {}ms", output.times_ms.total);
-        Ok(())
+        Ok(output.times_ms.total)
     } else {
-        Err("verus failed to verify".into())
+        Err(("verus failed to verify".into(), output.times_ms.total))
     }
 }
