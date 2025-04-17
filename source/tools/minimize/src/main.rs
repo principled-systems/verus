@@ -14,13 +14,10 @@ use serde::{Deserialize, Serialize};
 use syn_verus::{spanned::Spanned, visit::Visit, Attribute, File, Meta, MetaList, Signature};
 
 struct Config {
-    #[allow(dead_code)]
-    print_all: bool,
-    #[allow(dead_code)]
-    json: bool,
     no_external_by_default: bool,
     delimiters_are_layout: bool,
-    permutations_dir: std::path::PathBuf,
+    permutations_dir: Option<std::path::PathBuf>,
+    num_asserts: bool,
 }
 
 fn main() {
@@ -29,9 +26,9 @@ fn main() {
 
     let mut opts = getopts::Options::new();
     opts.optflag("h", "help", "print this help menu");
-    opts.optflag("p", "print-all", "print all the annotated files");
+    opts.optflag("n", "num-asserts", "print the number of asserts of a project");
     opts.optflag("", "no-external-by-default", "do not ignore items outside of verus! by default");
-    opts.reqopt(
+    opts.optopt(
         "d",
         "permutations-dir",
         "the directory to store the source permutations to test",
@@ -64,15 +61,19 @@ fn main() {
         return;
     };
 
-    let permutations_dir =
-        PathBuf::from(matches.opt_str("permutations-dir").expect("permutations-dir is required"));
+    let permutations_dir = if matches.opt_present("d") && !matches.opt_present("n") {
+        Some(PathBuf::from(
+            matches.opt_str("permutations-dir").expect("permutations-dir is required"),
+        ))
+    } else {
+        None
+    };
 
     let config = Config {
-        print_all: matches.opt_present("p"),
-        json: matches.opt_present("json"),
         no_external_by_default: matches.opt_present("no-external-by-default"),
         delimiters_are_layout: matches.opt_present("delimiters-are-layout"),
         permutations_dir,
+        num_asserts: matches.opt_present("num-asserts"),
     };
 
     match run(config, &std::path::Path::new(&deps_path)) {
@@ -1508,7 +1509,7 @@ fn process_file(config: Arc<Config>, input_path: &std::path::Path) -> Result<Fil
                     _ => {}
                 }
             }
-            Meta::List(MetaList { path, delimiter: _, tokens }) => {
+            Meta::List(MetaList { path, delimiter: _, tokens: _ }) => {
                 let mut path_iter = path.segments.iter();
                 match (path_iter.next(), path_iter.next()) {
                     (Some(first), None) if first.ident == "cfg_attr" => {
@@ -1688,26 +1689,46 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     let config = Arc::new(config);
     let (root_path, files) = get_dependencies(deps_path)?;
 
-    if config.permutations_dir.is_dir() {
-        println!("The permutations directory already exists. Do you want to delete it? (y/n): ");
-        io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        if input.trim().to_lowercase() == "y" {
-            std::fs::remove_dir_all(&config.permutations_dir)
-                .expect("Failed to delete the directory");
-        } else {
-            panic!("permutations directory already exists");
-        }
-    }
-
     let file_stats: Vec<(PathBuf, FileData)> = files
         .iter()
         .map(|f| process_file(config.clone(), &root_path.join(f)).map(|fs| (f.clone(), fs)))
         .collect::<Result<Vec<_>, String>>()?;
 
     let num_asserts = file_stats.iter().map(|(_, fs)| fs.asserts.len()).sum::<usize>();
+
+    if config.num_asserts {
+        println!("Number of asserts: {}", num_asserts);
+        return Ok(());
+    }
+
+    if config.permutations_dir.is_none() {
+        return Err("permutations_dir is not set".to_string());
+    }
+
+    let permutations_dir = config.permutations_dir.clone().unwrap();
+
+    if permutations_dir.is_dir() {
+        println!("The permutations directory already exists. Do you want to delete it? (y/n): ");
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        if input.trim().to_lowercase() == "y" {
+            std::fs::remove_dir_all(&permutations_dir).expect("Failed to delete the directory");
+        } else {
+            panic!("permutations directory already exists");
+        }
+    }
+
+    // run verus for the first time
+    match run_verus(&root_path, 7, None) {
+        Ok(t) => {
+            println!("original verification time: {}ms", t);
+        }
+        Err((e, _)) => {
+            return Err(format!("verus failed to verify before minimization: {}", e));
+        }
+    }
 
     let pb = ProgressBar::new(num_asserts as u64);
     pb.set_style(
@@ -1718,11 +1739,6 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
             .unwrap()
             .progress_chars("#>-"),
     );
-
-    // run verus for the first time
-    if let Err((e, _)) = run_verus(&root_path, 7, None) {
-        return Err(format!("verus failed to verify before minimization: {}", e));
-    }
 
     // comment out each assert and run verus
     // if it succeeded, keep it commented out, if not, revert
@@ -1740,19 +1756,18 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
         if running.len() < num_threads / 4 {
             let (file_no, (next_file, next_file_data)) =
                 queue.pop_front().expect("queue was not empty");
-            let config = config.clone();
+            let permutations_dir = permutations_dir.clone();
             let file_stats = file_stats.clone();
             let pb = pb.clone();
             let original_file = root_path.join(next_file.clone());
             running.push(std::thread::spawn(move || {
                 std::fs::create_dir_all(
-                    config.permutations_dir.join(std::path::Path::new(&file_no.to_string())),
+                    permutations_dir.join(std::path::Path::new(&file_no.to_string())),
                 )
                 .expect("create directory");
 
                 for (path, file_data) in file_stats.iter() {
-                    let file_path = config
-                        .permutations_dir
+                    let file_path = permutations_dir
                         .join(std::path::Path::new(&file_no.to_string()))
                         .join(path);
                     if let Some(parent) = file_path.parent() {
@@ -1761,15 +1776,14 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
                     std::fs::write(&file_path, file_data.contents.clone()).expect("write file");
                 }
 
-                let file_to_mutate = config
-                    .permutations_dir
+                let file_to_mutate = permutations_dir
                     .join(std::path::Path::new(&file_no.to_string()))
                     .join(next_file);
                 for lines in next_file_data.asserts.iter() {
                     pb.inc(1);
                     let _ = comment_lines_out(&file_to_mutate, &lines.to_owned().into());
                     match run_verus(
-                        &config.permutations_dir.join(std::path::Path::new(&file_no.to_string())),
+                        &permutations_dir.join(std::path::Path::new(&file_no.to_string())),
                         4,
                         None,
                     ) {
