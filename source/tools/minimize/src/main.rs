@@ -1819,8 +1819,8 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
                 }
                 println!("minimization of {} is completed", file_to_mutate.display());
                 // copy back to original location with _min suffix if the file content is changed
-                if std::fs::read_to_string(&file_to_mutate).expect("read file")
-                    != std::fs::read_to_string(&original_file).expect("read original file")
+                if std::fs::read_to_string(&file_to_mutate).expect("read file").trim()
+                    != std::fs::read_to_string(&original_file).expect("read original file").trim()
                 {
                     std::fs::copy(&file_to_mutate, original_file.with_extension("min.rs"))
                         .expect("copy file");
