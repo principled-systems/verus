@@ -1760,11 +1760,18 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
             let file_stats = file_stats.clone();
             let pb = pb.clone();
             let original_file = root_path.join(next_file.clone());
+            let libc_path = root_path.parent().unwrap().join("build").join("liblibc.rlib");
+
             running.push(std::thread::spawn(move || {
                 std::fs::create_dir_all(
                     permutations_dir.join(std::path::Path::new(&file_no.to_string())),
                 )
                 .expect("create directory");
+
+                // create the build directory and copy ../build/liblibc.rlib
+                let build_dir = permutations_dir.join(std::path::Path::new(&file_no.to_string())).join("build");
+                std::fs::create_dir_all(&build_dir).expect("create build directory");
+                std::fs::copy(&libc_path, build_dir.join("liblibc.rlib")).expect("copy libc");
 
                 for (path, file_data) in file_stats.iter() {
                     let file_path = permutations_dir
@@ -1887,17 +1894,22 @@ fn run_verus(
     num_threads: usize,
     json_file: Option<&std::path::Path>,
 ) -> Result<u32, (String, u32)> {
-    let file_path = proj_path.join("lib.rs");
+    // let file_path = proj_path.join("lib.rs");
 
     let verus_path = current_dir().unwrap().join("../../target-verus/release/verus");
 
     let cmd = std::process::Command::new(verus_path)
+        .current_dir(proj_path)
         .arg("--crate-type=dylib")
+        .env("VERUS_SINGULAR_PATH", "/local/abai/singular/bin/Singular")
+        .arg("--rlimit")
+        .arg("90")
+        .arg("--triggers-mode=silent")
+        // unfortunately this is a different file structure from the source code
+        .arg("--extern=libc=./build/liblibc.rlib")
         .arg("--output-json")
         .arg("--time")
-        .arg(file_path)
-        .arg("--rlimit")
-        .arg("20")
+        .arg("lib.rs")
         .arg("--num-threads")
         .arg(num_threads.to_string())
         .stdout(std::process::Stdio::piped())
