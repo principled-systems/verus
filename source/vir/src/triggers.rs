@@ -423,6 +423,37 @@ fn get_manual_triggers(state: &mut State, exp: &Exp) -> Result<(), VirErr> {
     Ok(())
 }
 
+
+macro_rules! string_list {
+    ($($item:ident),* $(,)?) => {
+        &[$(stringify!($item)),*]
+    };
+}
+// Tunable Automation Experiment: a list of broadcast lemma that we want all triggers
+static ALL_TRIGGERS_LEMMAS  : &[&str] = string_list![
+    lemma_seq_contains,
+    lemma_seq_empty_contains_nothing,
+    lemma_seq_empty_equality,
+    lemma_seq_concat_contains_all_elements,
+    lemma_seq_contains_after_push,
+    lemma_seq_subrange_elements,
+    lemma_seq_take_len,
+    lemma_seq_take_contains,
+    lemma_seq_take_index,
+    lemma_seq_skip_len,
+    lemma_seq_skip_contains,
+    lemma_seq_skip_index,
+    lemma_seq_skip_index2,
+    lemma_seq_append_take_skip,
+    lemma_seq_take_update_commut1,
+    lemma_seq_take_update_commut2,
+    lemma_seq_skip_update_commut1,
+    lemma_seq_skip_update_commut2,
+    lemma_seq_skip_build_commut,
+    lemma_seq_skip_nothing,
+    lemma_seq_take_nothing,
+];
+
 pub(crate) fn build_triggers(
     ctx: &Ctx,
     span: &Span,
@@ -443,8 +474,14 @@ pub(crate) fn build_triggers(
         let cur_function = &ctx.func_map[cur_fun];
         if
             cur_function.x.name.path.krate.as_ref().map(|x| **x == &*crate::def::VERUSLIB).unwrap_or(false) &&
-            cur_function.x.name.path.segments.last().map(|x| x.starts_with("axiom_")).unwrap_or(false) {
-            state.auto_trigger = AutoType::All;
+            // cur_function.x.name.path.segments.last().map(|x| x.starts_with("axiom_")).unwrap_or(false)
+            // if it belongs to the ALL_TRIGGERS_LEMMAS list
+            cur_function.x.name.path.segments.last().map_or(false, |y| {
+                ALL_TRIGGERS_LEMMAS.iter().any(|x| **y == *x)
+            }) 
+        {
+            // state.auto_trigger = AutoType::All;
+            // dbg!("triggers {:?}", &state.triggers);
             dbg!(crate::ast_util::path_as_friendly_rust_name(&cur_function.x.name.path));
         }
     }
