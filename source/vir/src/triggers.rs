@@ -469,21 +469,33 @@ pub(crate) fn build_triggers(
         natives: HashSet::new(),
         polys: HashSet::new(),
     };
-    get_manual_triggers(&mut state, exp)?;
+    let mut auto_trigger_applied = false;
     if let Some(cur_fun) = &ctx.sst_cur_fun {
         let cur_function = &ctx.func_map[cur_fun];
         if
-            cur_function.x.name.path.krate.as_ref().map(|x| **x == &*crate::def::VERUSLIB).unwrap_or(false) &&
-            // cur_function.x.name.path.segments.last().map(|x| x.starts_with("axiom_")).unwrap_or(false)
+            cur_function.x.name.path.krate.as_ref().map(|x| **x == &*crate::def::VERUSLIB).unwrap_or(true) &&
+            cur_function.x.name.path.segments.iter().find(|x|
+                x.starts_with("seq") ||
+                x.starts_with("set") ||
+                x.starts_with("map") ||
+                x.starts_with("multiset")).is_some() &&
+            cur_function.x.name.path.segments.last().map(|x| x.starts_with("axiom_")).unwrap_or(false) &&
+            !cur_function.x.name.path.segments.last().map(|x| x.starts_with("axiom_set_ext_equal")).unwrap_or(false)
+
+            // cur_function.x.name.path.segments.last().map(|x| **x == "axiom_set_union").unwrap_or(false)
             // if it belongs to the ALL_TRIGGERS_LEMMAS list
-            cur_function.x.name.path.segments.last().map_or(false, |y| {
-                ALL_TRIGGERS_LEMMAS.iter().any(|x| **y == *x)
-            }) 
+            //cur_function.x.name.path.segments.last().map_or(false, |y| {
+            //    ALL_TRIGGERS_LEMMAS.iter().any(|x| **y == *x)
+            //}) 
         {
-            // state.auto_trigger = AutoType::All;
+            auto_trigger_applied = true;
+            state.auto_trigger = AutoType::All;
             // dbg!("triggers {:?}", &state.triggers);
-            dbg!(crate::ast_util::path_as_friendly_rust_name(&cur_function.x.name.path));
+            // dbg!(crate::ast_util::path_as_friendly_rust_name(&cur_function.x.name.path));
         }
+    }
+    if !auto_trigger_applied {
+        get_manual_triggers(&mut state, exp)?;
     }
     if state.triggers.len() > 0 || allow_empty {
         if state.auto_trigger != AutoType::None {

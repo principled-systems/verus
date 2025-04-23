@@ -1947,7 +1947,7 @@ pub broadcast proof fn lemma_seq_append_take_skip<A>(a: Seq<A>, b: Seq<A>, n: in
 pub broadcast proof fn lemma_seq_take_update_commut1<A>(s: Seq<A>, i: int, v: A, n: int)
     ensures
         #![trigger s.update(i, v).take(n)]
-        0 <= i < n <= s.len() ==> #[trigger] s.update(i, v).take(n) =~= s.take(n).update(i, v),
+        0 <= i < n <= s.len() ==> s.update(i, v).take(n) =~= s.take(n).update(i, v),
 {
 }
 
