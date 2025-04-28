@@ -432,6 +432,7 @@ macro_rules! string_list {
 static AXIOMS_REVERT_ALL_TRIGGERS: &[&str] = string_list![
     // need to comment out for a bug on Auto Triggers for extensional equality
     axiom_set_ext_equal,
+    axiom_multiset_ext_equal,
     // chief sinners for verifying set_lib
     axiom_set_insert_len,
     axiom_set_remove_len,
@@ -439,6 +440,27 @@ static AXIOMS_REVERT_ALL_TRIGGERS: &[&str] = string_list![
     // pass, it's not that relevant tho...
     axiom_set_remove_insert,
     // chief sinners for verifying seq_lib
+    axiom_seq_ext_equal_deep,
+    axiom_seq_ext_equal,
+    axiom_seq_index_decreases,
+    
+    // chief sinners for verifying map_lib
+    axiom_map_ext_equal,
+    axiom_map_ext_equal_deep,
+
+    // chief sinners for verifying multiset_lib
+    // no sinners
+
+    // bug:
+    // cannot use both manual triggers (#[trigger] or #![trigger ...]) and #![auto]
+    // when verifying the whole vstd:
+    axiom_map_empty,
+    axiom_set_empty_finite,
+    axiom_set_insert_finite,
+    axiom_set_union_finite,
+    axiom_set_choose_finite,
+    axiom_set_empty_len,
+    axiom_set_choose_len
 ];
 
 pub(crate) fn build_triggers(
