@@ -454,9 +454,7 @@ fn gather_terms(ctxt: &mut Ctxt, ctx: &Ctx, exp: &Exp, depth: u64) -> (bool, Ter
             let (_, term3) = gather_terms(ctxt, ctx, e3, depth);
             (false, Arc::new(TermX::App(ctxt.other(), Arc::new(vec![term1, term2, term3]))))
         }
-        ExpX::WithTriggers(_, e) => {
-            gather_terms(ctxt, ctx, e, depth)
-        }
+        ExpX::WithTriggers(_, e) => gather_terms(ctxt, ctx, e, depth),
         ExpX::Bind(_, _) => {
             // REVIEW: we could at least look for matching loops here
             (false, Arc::new(TermX::App(ctxt.other(), Arc::new(vec![]))))

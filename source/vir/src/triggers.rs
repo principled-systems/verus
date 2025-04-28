@@ -423,35 +423,22 @@ fn get_manual_triggers(state: &mut State, exp: &Exp) -> Result<(), VirErr> {
     Ok(())
 }
 
-
 macro_rules! string_list {
     ($($item:ident),* $(,)?) => {
         &[$(stringify!($item)),*]
     };
 }
 // Tunable Automation Experiment: a list of broadcast lemma that we want all triggers
-static ALL_TRIGGERS_LEMMAS  : &[&str] = string_list![
-    lemma_seq_contains,
-    lemma_seq_empty_contains_nothing,
-    lemma_seq_empty_equality,
-    lemma_seq_concat_contains_all_elements,
-    lemma_seq_contains_after_push,
-    lemma_seq_subrange_elements,
-    lemma_seq_take_len,
-    lemma_seq_take_contains,
-    lemma_seq_take_index,
-    lemma_seq_skip_len,
-    lemma_seq_skip_contains,
-    lemma_seq_skip_index,
-    lemma_seq_skip_index2,
-    lemma_seq_append_take_skip,
-    lemma_seq_take_update_commut1,
-    lemma_seq_take_update_commut2,
-    lemma_seq_skip_update_commut1,
-    lemma_seq_skip_update_commut2,
-    lemma_seq_skip_build_commut,
-    lemma_seq_skip_nothing,
-    lemma_seq_take_nothing,
+static AXIOMS_REVERT_ALL_TRIGGERS: &[&str] = string_list![
+    // need to comment out for a bug on Auto Triggers for extensional equality
+    axiom_set_ext_equal,
+    // chief sinners for verifying set_lib
+    axiom_set_insert_len,
+    axiom_set_remove_len,
+    // TODO: this is mostly just to get lemma_set_union_finite_implies_sets_finite
+    // pass, it's not that relevant tho...
+    axiom_set_remove_insert,
+    // chief sinners for verifying seq_lib
 ];
 
 pub(crate) fn build_triggers(
@@ -472,21 +459,42 @@ pub(crate) fn build_triggers(
     let mut auto_trigger_applied = false;
     if let Some(cur_fun) = &ctx.sst_cur_fun {
         let cur_function = &ctx.func_map[cur_fun];
-        if
-            cur_function.x.name.path.krate.as_ref().map(|x| **x == &*crate::def::VERUSLIB).unwrap_or(true) &&
-            cur_function.x.name.path.segments.iter().find(|x|
-                x.starts_with("seq") ||
-                x.starts_with("set") ||
-                x.starts_with("map") ||
-                x.starts_with("multiset")).is_some() &&
-            cur_function.x.name.path.segments.last().map(|x| x.starts_with("axiom_")).unwrap_or(false) &&
-            !cur_function.x.name.path.segments.last().map(|x| x.starts_with("axiom_set_ext_equal")).unwrap_or(false)
-
-            // cur_function.x.name.path.segments.last().map(|x| **x == "axiom_set_union").unwrap_or(false)
-            // if it belongs to the ALL_TRIGGERS_LEMMAS list
-            //cur_function.x.name.path.segments.last().map_or(false, |y| {
-            //    ALL_TRIGGERS_LEMMAS.iter().any(|x| **y == *x)
-            //}) 
+        if cur_function
+            .x
+            .name
+            .path
+            .krate
+            .as_ref()
+            .map(|x| **x == &*crate::def::VERUSLIB)
+            .unwrap_or(true)
+            && cur_function
+                .x
+                .name
+                .path
+                .segments
+                .iter()
+                .find(|x| {
+                    x.starts_with("seq")
+                        || x.starts_with("set")
+                        || x.starts_with("map")
+                        || x.starts_with("multiset")
+                })
+                .is_some()
+            && cur_function
+                .x
+                .name
+                .path
+                .segments
+                .last()
+                .map(|x| x.starts_with("axiom_"))
+                .unwrap_or(false)
+            && !cur_function
+                .x
+                .name
+                .path
+                .segments
+                .last()
+                .map_or(false, |x| AXIOMS_REVERT_ALL_TRIGGERS.iter().any(|y| x.starts_with(*y)))
         {
             auto_trigger_applied = true;
             state.auto_trigger = AutoType::All;
