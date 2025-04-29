@@ -3115,6 +3115,15 @@ impl rustc_driver::Callbacks for VerifierCallbacksEraseMacro {
                 }
             );
         }
+        rustc_driver::Compilation::Continue
+    }
+    
+    fn after_analysis<'tcx>(
+            &mut self,
+            _compiler: &rustc_interface::interface::Compiler,
+            _queries: &'tcx rustc_interface::Queries<'tcx>,
+        ) -> rustc_driver::Compilation {
+        
         rustc_driver::Compilation::Stop
     }
 }
