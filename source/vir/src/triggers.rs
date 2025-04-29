@@ -430,9 +430,6 @@ macro_rules! string_list {
 }
 // Tunable Automation Experiment: a list of broadcast lemma that we want all triggers
 static AXIOMS_REVERT_ALL_TRIGGERS: &[&str] = string_list![
-    // need to comment out for a bug on Auto Triggers for extensional equality
-    axiom_set_ext_equal,
-    axiom_multiset_ext_equal,
     // chief sinners for verifying set_lib
     axiom_set_insert_len,
     axiom_set_remove_len,
@@ -460,7 +457,8 @@ static AXIOMS_REVERT_ALL_TRIGGERS: &[&str] = string_list![
     axiom_set_union_finite,
     axiom_set_choose_finite,
     axiom_set_empty_len,
-    axiom_set_choose_len
+    axiom_set_choose_len,
+    axiom_set_ext_equal,
 ];
 
 pub(crate) fn build_triggers(
