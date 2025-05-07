@@ -2589,7 +2589,7 @@ fn expr_assign_to_vir_innermost<'tcx>(
             rhs_vir.typ.clone(),
         ]));
         let tgt_vir =
-            bctx.spanned_typed_new(tgt_expr.span, &tgt_vir.typ.clone(), ExprX::Loc(tgt_vir));
+            bctx.spanned_typed_new(tgt_expr.span, &tgt_vir.typ.clone(), ExprX::Borrow(tgt_vir));
         let call_target = CallTarget::Fun(
             vir::ast::CallTargetKind::Static,
             fun,

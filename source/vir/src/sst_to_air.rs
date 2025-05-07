@@ -798,7 +798,7 @@ pub(crate) fn exp_to_expr(ctx: &Ctx, exp: &Exp, expr_ctxt: &ExprCtxt) -> Result<
             ExprMode::BodyPre => string_var(&suffix_local_unique_id(x)),
         },
         ExpX::StaticVar(f) => string_var(&static_name(f)),
-        ExpX::Loc(e0) => exp_to_expr(ctx, e0, expr_ctxt)?,
+        ExpX::Borrow { exp: e0, mutable: _ } => exp_to_expr(ctx, e0, expr_ctxt)?,
         ExpX::Old(span, x) => Arc::new(ExprX::Old(span.clone(), suffix_local_unique_id(x))),
         ExpX::Call(f @ (CallFun::Fun(..) | CallFun::Recursive(_)), typs, args) => {
             let x_name = match f {
@@ -1445,7 +1445,7 @@ fn loc_to_field_update_data(loc: &Exp) -> (UniqueIdent, LocFieldInfo<Vec<FieldUp
     let mut fields = Vec::new();
     loop {
         match &e.x {
-            ExpX::Loc(ee) => e = ee,
+            ExpX::Borrow { exp: ee, mutable: _ } => e = ee,
             ExpX::UnaryOpr(UnaryOpr::Box(_) | UnaryOpr::Unbox(_), ee) => e = ee,
             ExpX::VarLoc(x) => {
                 fields.reverse();

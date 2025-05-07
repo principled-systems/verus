@@ -301,7 +301,7 @@ where
                 | ExprX::ConstVar(..)
                 | ExprX::StaticVar(..)
                 | ExprX::AirStmt(_) => (),
-                ExprX::Loc(e) => {
+                ExprX::Borrow { expr: e, .. } => {
                     expr_visitor_control_flow!(expr_visitor_dfs(e, map, mf));
                 }
                 ExprX::Call(target, es) => {
@@ -744,7 +744,10 @@ where
         ExprX::VarAt(x, at) => ExprX::VarAt(x.clone(), at.clone()),
         ExprX::ConstVar(x, a) => ExprX::ConstVar(x.clone(), *a),
         ExprX::StaticVar(x) => ExprX::StaticVar(x.clone()),
-        ExprX::Loc(e) => ExprX::Loc(map_expr_visitor_env(e, map, env, fe, fs, ft)?),
+        ExprX::Borrow { expr: e, mutable } => ExprX::Borrow {
+            expr: map_expr_visitor_env(e, map, env, fe, fs, ft)?,
+            mutable: *mutable,
+        },
         ExprX::Call(target, es) => {
             let target = match target {
                 CallTarget::Fun(kind, x, typs, impl_paths, autospec_usage) => {

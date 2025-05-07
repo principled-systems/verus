@@ -118,7 +118,7 @@ fn insert_auto_ext_equal(ctx: &Ctx, exp: &Exp) -> Exp {
         | ExpX::StaticVar(_)
         | ExpX::VarLoc(_)
         | ExpX::VarAt(..)
-        | ExpX::Loc(_)
+        | ExpX::Borrow { .. }
         | ExpX::Old(..)
         | ExpX::Call(..)
         | ExpX::CallLambda(..)

@@ -55,7 +55,7 @@ fn expr_get_early_exits_rec(
             | ExprX::VarAt(..)
             | ExprX::ConstVar(..)
             | ExprX::StaticVar(..)
-            | ExprX::Loc(..)
+            | ExprX::Borrow { .. }
             | ExprX::Call(CallTarget::Fun(..), _)
             | ExprX::Call(CallTarget::FnSpec(..), _)
             | ExprX::Call(CallTarget::BuiltinSpecFun(..), _)

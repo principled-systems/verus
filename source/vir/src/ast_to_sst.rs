@@ -826,7 +826,7 @@ fn is_small_exp(exp: &Exp) -> bool {
 
 fn is_small_exp_or_loc(exp: &Exp) -> bool {
     match &exp.x {
-        ExpX::Loc(..) => true,
+        ExpX::Borrow { .. } => true,
         _ => is_small_exp(exp),
     }
 }
@@ -1043,10 +1043,10 @@ pub(crate) fn expr_to_stm_opt(
             ))
         }
         ExprX::ConstVar(..) => panic!("ConstVar should already be removed"),
-        ExprX::Loc(expr1) => {
+        ExprX::Borrow { expr: expr1, mutable } => {
             let (stms, e0) = expr_to_stm_opt(ctx, state, expr1)?;
             let e0 = unwrap_or_return_never!(e0, stms);
-            Ok((stms, ReturnValue::Some(mk_exp(ExpX::Loc(e0)))))
+            Ok((stms, ReturnValue::Some(mk_exp(ExpX::Borrow { exp: e0, mutable: *mutable }))))
         }
         ExprX::Assign { init_not_mut, lhs: lhs_expr, rhs: expr2, op } => {
             if op.is_some() {

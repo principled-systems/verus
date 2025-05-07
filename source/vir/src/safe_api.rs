@@ -167,11 +167,14 @@ pub fn body_that_havocs_all_outputs(function: &Function) -> Expr {
                         lhs: SpannedTyped::new(
                             span,
                             &param.x.typ,
-                            ExprX::Loc(SpannedTyped::new(
-                                span,
-                                &param.x.typ,
-                                ExprX::VarLoc(param.x.name.clone()),
-                            )),
+                            ExprX::Borrow {
+                                expr: SpannedTyped::new(
+                                    span,
+                                    &param.x.typ,
+                                    ExprX::VarLoc(param.x.name.clone()),
+                                ),
+                                mutable: false,
+                            },
                         ),
                         rhs: SpannedTyped::new(span, &param.x.typ, ExprX::Nondeterministic),
                         op: None,

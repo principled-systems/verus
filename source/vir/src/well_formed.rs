@@ -372,7 +372,7 @@ fn check_one_expr(
                     e => e,
                 };
                 let is_ok = match &arg_x {
-                    ExprX::Loc(l) => is_ok(l),
+                    ExprX::Borrow(l) => is_ok(l),
                     _ => false,
                 };
                 if !is_ok {

@@ -251,7 +251,7 @@ fn asserts_for_lhs(
             ExprX::VarLoc(_) => {
                 break;
             }
-            ExprX::Loc(expr) => {
+            ExprX::Borrow(expr) => {
                 cur = expr;
             }
             _ => {
@@ -271,7 +271,7 @@ fn loc_to_normal_expr(e: &Expr) -> Expr {
         ExprX::VarLoc(ident) => {
             Ok(SpannedTyped::new(&expr.span, &expr.typ, ExprX::Var(ident.clone())))
         }
-        ExprX::Loc(e) => Ok(e.clone()),
+        ExprX::Borrow(e) => Ok(e.clone()),
         _ => Ok(expr.clone()),
     })
     .unwrap()

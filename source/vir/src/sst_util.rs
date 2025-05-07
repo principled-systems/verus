@@ -142,7 +142,7 @@ fn subst_exp_rec(
             panic!("MustBeFinalized")
         }
         ExpX::Const(..)
-        | ExpX::Loc(..)
+        | ExpX::Borrow { .. }
         | ExpX::StaticVar(..)
         | ExpX::Old(..)
         | ExpX::Call(..)
@@ -366,7 +366,7 @@ impl ExpX {
             Var(id) | VarLoc(id) => (format!("{}", user_local_name(id)), 99),
             VarAt(id, _at) => (format!("old({})", user_local_name(id)), 99),
             StaticVar(fun) => (format!("{}", fun.path.segments.last().unwrap()), 99),
-            Loc(exp) => {
+            Borrow { exp, mutable: _ } => {
                 return exp.x.to_string_prec(global, precedence);
             }
             Call(cf @ (CallFun::Fun(fun, _) | CallFun::Recursive(fun)), _, exps) => {

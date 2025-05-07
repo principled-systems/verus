@@ -414,9 +414,9 @@ fn visit_exp(ctx: &Ctx, state: &mut State, exp: &Exp) -> Exp {
             SpannedTyped::new(&exp.span, &state.types[x], ExpX::VarAt(x.clone(), *at))
         }
         ExpX::StaticVar(_) => exp.clone(),
-        ExpX::Loc(e) => {
+        ExpX::Borrow { exp: e, mutable } => {
             let exp = visit_exp(ctx, state, e);
-            mk_exp_typ(&exp.clone().typ, ExpX::Loc(exp))
+            mk_exp_typ(&exp.clone().typ, ExpX::Borrow { exp, mutable: *mutable })
         }
         ExpX::Old(..) => panic!("internal error: unexpected ExpX::Old"),
         ExpX::Call(call_fun, typs, exps) => match call_fun {

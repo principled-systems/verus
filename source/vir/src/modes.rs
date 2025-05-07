@@ -1078,7 +1078,7 @@ fn check_expr_handle_mut_arg(
             check_expr_has_mode(ctxt, record, typing, Mode::Spec, e1, Mode::Spec)?;
             Ok(Mode::Spec)
         }
-        ExprX::Loc(e) => {
+        ExprX::Borrow { expr: e, mutable: _ } => {
             return check_expr_handle_mut_arg(ctxt, record, typing, outer_mode, e);
         }
         ExprX::Binary(op, e1, e2) => {

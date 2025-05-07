@@ -72,7 +72,7 @@ pub enum ExpX {
     StaticVar(Fun),
     VarLoc(UniqueIdent),
     VarAt(UniqueIdent, VarAt),
-    Loc(Exp),
+    Borrow { exp: Exp, mutable: bool },
     // used only during sst_to_air to generate AIR Old
     Old(Ident, UniqueIdent),
     // call to spec function

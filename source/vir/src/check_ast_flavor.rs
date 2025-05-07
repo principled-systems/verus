@@ -148,7 +148,7 @@ fn expr_no_loc_in_spec(
         ExprX::AssertBy { vars: _, require, ensure, proof: _ } => {
             recurse_in_spec(require).and_then(|_| recurse_in_spec(ensure))
         }
-        ExprX::VarLoc(_) | ExprX::Loc(_) if in_spec => Err(()),
+        ExprX::VarLoc(_) | ExprX::Borrow { .. } if in_spec => Err(()),
         _ => Ok(true),
     } {
         Ok(true) => VisitorControlFlow::Recurse,

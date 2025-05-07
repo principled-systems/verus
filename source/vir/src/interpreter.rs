@@ -362,7 +362,9 @@ impl SyntacticEquality for Exp {
             (Var(l), Var(r)) => def_eq(l == r),
             (VarLoc(l), VarLoc(r)) => def_eq(l == r),
             (VarAt(l, at_l), VarAt(r, at_r)) => def_eq(l == r && at_l == at_r),
-            (Loc(l), Loc(r)) => l.syntactic_eq(r),
+            (Borrow { exp: l, mutable: ml }, Borrow { exp: r, mutable: mr }) => {
+                l.syntactic_eq(r).map(|se| se && *ml && *mr)
+            }
             (Old(id_l, unique_id_l), Old(id_r, unique_id_r)) => {
                 def_eq(id_l == id_r && unique_id_l == unique_id_r)
             }
@@ -503,7 +505,7 @@ fn hash_exp<H: Hasher>(state: &mut H, exp: &Exp) {
         Var(id) => dohash!(1, id),
         VarLoc(id) => dohash!(2, id),
         VarAt(id, va) => dohash!(3, id, va),
-        Loc(e) => dohash!(4; hash_exp(e)),
+        Borrow { exp: e, mutable } => dohash!(4, mutable; hash_exp(e)),
         Old(id, uid) => dohash!(5, id, uid),
         Call(fun, typs, exps) => dohash!(6, fun, typs; hash_exps(exps)),
         CallLambda(lambda, args) => {
@@ -1732,7 +1734,7 @@ fn eval_expr_internal(ctx: &Ctx, state: &mut State, exp: &Exp) -> Result<Exp, Vi
             InterpExp::Array(_) => ok,
         },
         // Ignored by the interpreter at present (i.e., treated as symbolic)
-        VarAt(..) | VarLoc(..) | Loc(..) | Old(..) | WithTriggers(..) | StaticVar(..) => ok,
+        VarAt(..) | VarLoc(..) | Borrow { .. } | Old(..) | WithTriggers(..) | StaticVar(..) => ok,
         ExecFnByName(_) => ok,
         FuelConst(_) => ok,
     };
