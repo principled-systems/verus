@@ -1066,14 +1066,14 @@ pub(crate) fn expr_to_vir_with_adjustments<'tcx>(
         Adjust::Deref(None) => {
             // handle same way as the UnOp::Deref case
             let new_modifier = is_expr_typ_mut_ref(get_inner_ty(), current_modifier)?;
-            let mut new_expr = expr_to_vir_with_adjustments(
+            let new_expr = expr_to_vir_with_adjustments(
                 bctx,
                 expr,
                 new_modifier,
                 adjustments,
                 adjustment_idx - 1,
             )?;
-            let typ = &mut Arc::make_mut(&mut new_expr).typ;
+            let mut typ = new_expr.typ.clone();
             if let TypX::Decorate(
                 vir::ast::TypDecoration::MutRef
                 | vir::ast::TypDecoration::Ref
@@ -1082,11 +1082,12 @@ pub(crate) fn expr_to_vir_with_adjustments<'tcx>(
                 | vir::ast::TypDecoration::Arc,
                 _,
                 inner_typ,
-            ) = &**typ
+            ) = &*typ
             {
-                *typ = inner_typ.clone();
+                typ = inner_typ.clone();
             }
-            Ok(new_expr)
+            let span = new_expr.span.clone();
+            Ok(SpannedTyped::new(&span, &typ, ExprX::Deref(new_expr)))
         }
         Adjust::Deref(Some(_)) => {
             // note: deref has signature (&self) -> &Self::Target
@@ -1114,16 +1115,21 @@ pub(crate) fn expr_to_vir_with_adjustments<'tcx>(
         }
         Adjust::Borrow(AutoBorrow::Ref(_region, AutoBorrowMutability::Not)) => {
             // Similar to ExprKind::AddrOf
-            let mut new_expr: Arc<SpannedTyped<vir::ast::ExprX>> = expr_to_vir_with_adjustments(
+            let inner_expr = expr_to_vir_with_adjustments(
                 bctx,
                 expr,
                 ExprModifier::REGULAR,
                 adjustments,
                 adjustment_idx - 1,
             )?;
-            let typ =
-                Arc::new(TypX::Decorate(vir::ast::TypDecoration::Ref, None, new_expr.typ.clone()));
-            Arc::make_mut(&mut new_expr).typ = typ;
+            let typ = Arc::new(TypX::Decorate(
+                vir::ast::TypDecoration::Ref,
+                None,
+                inner_expr.typ.clone(),
+            ));
+            let span = inner_expr.span.clone();
+            let new_expr: Arc<SpannedTyped<vir::ast::ExprX>> =
+                SpannedTyped::new(&span, &typ, ExprX::Borrow { expr: inner_expr, mutable: false });
             Ok(new_expr)
         }
         Adjust::Borrow(AutoBorrow::Ref(_region, AutoBorrowMutability::Mut { .. })) => {
@@ -1131,13 +1137,25 @@ pub(crate) fn expr_to_vir_with_adjustments<'tcx>(
                 // * &mut cancels out
                 let mut new_modifier = current_modifier;
                 new_modifier.deref_mut = false;
-                expr_to_vir_with_adjustments(
+                let inner_expr = expr_to_vir_with_adjustments(
                     bctx,
                     expr,
                     new_modifier,
                     adjustments,
                     adjustment_idx - 1,
-                )
+                )?;
+                let outer_typ = Arc::new(TypX::Decorate(
+                    vir::ast::TypDecoration::MutRef,
+                    None,
+                    inner_expr.typ.clone(),
+                ));
+                let span = inner_expr.span.clone();
+                let new_expr = SpannedTyped::new(
+                    &span,
+                    &outer_typ,
+                    ExprX::Borrow { expr: inner_expr, mutable: true },
+                );
+                Ok(new_expr)
             } else {
                 unsupported_err!(
                     expr.span,
@@ -1779,9 +1797,15 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
             }
         }
         ExprKind::AddrOf(BorrowKind::Ref, Mutability::Not, e) => {
-            let mut new_expr = expr_to_vir_inner(bctx, e, ExprModifier::REGULAR)?;
-            let typ = &mut Arc::make_mut(&mut new_expr).typ;
-            *typ = Arc::new(TypX::Decorate(vir::ast::TypDecoration::Ref, None, typ.clone()));
+            let inner_expr = expr_to_vir_inner(bctx, e, ExprModifier::REGULAR)?;
+            let typ = Arc::new(TypX::Decorate(
+                vir::ast::TypDecoration::Ref,
+                None,
+                inner_expr.typ.clone(),
+            ));
+            let span = inner_expr.span.clone();
+            let new_expr =
+                SpannedTyped::new(&span, &typ, ExprX::Borrow { expr: inner_expr, mutable: false });
             Ok(new_expr)
         }
         ExprKind::AddrOf(BorrowKind::Ref, Mutability::Mut, e) => {
@@ -1789,7 +1813,19 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                 // * &mut cancels out
                 let mut new_modifier = current_modifier;
                 new_modifier.deref_mut = false;
-                expr_to_vir_inner(bctx, e, new_modifier)
+                let inner_expr = expr_to_vir_inner(bctx, e, new_modifier)?;
+                let outer_typ = Arc::new(TypX::Decorate(
+                    vir::ast::TypDecoration::MutRef,
+                    None,
+                    inner_expr.typ.clone(),
+                ));
+                let span = inner_expr.span.clone();
+                let new_expr = SpannedTyped::new(
+                    &span,
+                    &outer_typ,
+                    ExprX::Borrow { expr: inner_expr, mutable: true },
+                );
+                Ok(new_expr)
             } else {
                 unsupported_err!(expr.span, format!("&mut dereference in this position"))
             }
@@ -1865,8 +1901,8 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                 }
 
                 let modifier = is_expr_typ_mut_ref(inner_ty, modifier)?;
-                let mut new_expr = expr_to_vir_inner(bctx, arg, modifier)?;
-                let typ = &mut Arc::make_mut(&mut new_expr).typ;
+                let new_expr = expr_to_vir_inner(bctx, arg, modifier)?;
+                let mut typ = new_expr.typ.clone();
                 if let TypX::Decorate(
                     vir::ast::TypDecoration::MutRef
                     | vir::ast::TypDecoration::Ref
@@ -1875,11 +1911,12 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                     | vir::ast::TypDecoration::Arc,
                     _,
                     inner_typ,
-                ) = &**typ
+                ) = &*typ
                 {
-                    *typ = inner_typ.clone();
+                    typ = inner_typ.clone();
                 }
-                Ok(new_expr)
+                let span = new_expr.span.clone();
+                Ok(SpannedTyped::new(&span, &typ, ExprX::Deref(new_expr)))
             }
         },
         ExprKind::Binary(op, lhs, rhs) => {

@@ -200,6 +200,10 @@ pub(crate) trait Visitor<R: Returner, Err, Scope: Scoper> {
                 let e1 = self.visit_exp(e1)?;
                 R::ret(|| exp_new(ExpX::Borrow { exp: R::get(e1), mutable: *mutable }))
             }
+            ExpX::Deref(e1) => {
+                let e1 = self.visit_exp(e1)?;
+                R::ret(|| exp_new(ExpX::Deref(R::get(e1))))
+            }
             ExpX::Old(..) => R::ret(|| exp.clone()),
             ExpX::Call(fun, ts, es) => {
                 use crate::sst::CallFun;

@@ -254,6 +254,9 @@ fn asserts_for_lhs(
             ExprX::Borrow { expr, mutable: _ } => {
                 cur = expr;
             }
+            ExprX::Deref(expr) => {
+                cur = expr;
+            }
             _ => {
                 dbg!(&cur.x);
                 return Err(internal_error(

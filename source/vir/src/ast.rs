@@ -767,8 +767,10 @@ pub enum ExprX {
     ConstVar(Fun, AutospecUsage),
     /// Use of a static variable.
     StaticVar(Fun),
-    /// Mutable reference (location)
+    /// Reference (location)
     Borrow { expr: Expr, mutable: bool },
+    /// Dereference
+    Deref(Expr),
     /// Call to a function passing some expression arguments
     Call(CallTarget, Exprs),
     /// Construct datatype value of type Path and variant Ident,

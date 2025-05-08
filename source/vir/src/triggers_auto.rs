@@ -318,7 +318,8 @@ fn gather_terms(ctxt: &mut Ctxt, ctx: &Ctx, exp: &Exp, depth: u64) -> (bool, Ter
     let (is_pure, term) = match &exp.x {
         ExpX::Const(c) => (true, Arc::new(TermX::App(App::Const(c.clone()), Arc::new(vec![])))),
         ExpX::Var(x) => (true, Arc::new(TermX::Var(x.clone()))),
-        ExpX::VarLoc(..) | ExpX::Borrow { .. } => panic!("unexpected Loc/VarLoc in quantifier"),
+        ExpX::VarLoc(..) => panic!("unexpected Loc/VarLoc/Deref in quantifier"),
+        ExpX::Borrow { exp: e1, .. } | ExpX::Deref(e1) => gather_terms(ctxt, ctx, e1, depth),
         ExpX::VarAt(x, _) => {
             (true, Arc::new(TermX::App(App::VarAt(x.clone(), VarAt::Pre), Arc::new(vec![]))))
         }

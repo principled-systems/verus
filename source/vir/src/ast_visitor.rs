@@ -301,7 +301,7 @@ where
                 | ExprX::ConstVar(..)
                 | ExprX::StaticVar(..)
                 | ExprX::AirStmt(_) => (),
-                ExprX::Borrow { expr: e, .. } => {
+                ExprX::Borrow { expr: e, .. } | ExprX::Deref(e) => {
                     expr_visitor_control_flow!(expr_visitor_dfs(e, map, mf));
                 }
                 ExprX::Call(target, es) => {
@@ -748,6 +748,7 @@ where
             expr: map_expr_visitor_env(e, map, env, fe, fs, ft)?,
             mutable: *mutable,
         },
+        ExprX::Deref(e) => ExprX::Deref(map_expr_visitor_env(e, map, env, fe, fs, ft)?),
         ExprX::Call(target, es) => {
             let target = match target {
                 CallTarget::Fun(kind, x, typs, impl_paths, autospec_usage) => {

@@ -538,6 +538,7 @@ fn hash_exp<H: Hasher>(state: &mut H, exp: &Exp) {
         FuelConst(i) => {
             dohash!(19, i);
         }
+        Deref(e) => dohash!(20; hash_exp(e)),
     }
 }
 
@@ -1733,6 +1734,7 @@ fn eval_expr_internal(ctx: &Ctx, state: &mut State, exp: &Exp) -> Result<Exp, Vi
             InterpExp::Closure(_, _) => ok,
             InterpExp::Array(_) => ok,
         },
+        Borrow { exp, mutable: false } | Deref(exp) => eval_expr_internal(ctx, state, exp),
         // Ignored by the interpreter at present (i.e., treated as symbolic)
         VarAt(..) | VarLoc(..) | Borrow { .. } | Old(..) | WithTriggers(..) | StaticVar(..) => ok,
         ExecFnByName(_) => ok,

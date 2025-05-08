@@ -666,6 +666,9 @@ fn get_var_loc_mode(
                 get_var_loc_mode(ctxt, record, &mut typing, outer_mode, None, e1, init_not_mut)?;
             mode
         }
+        ExprX::Deref(e) => {
+            get_var_loc_mode(ctxt, record, typing, outer_mode, expr_inner_mode, e, init_not_mut)?
+        }
         _ => {
             panic!("unexpected loc {:?}", expr);
         }
@@ -1078,7 +1081,7 @@ fn check_expr_handle_mut_arg(
             check_expr_has_mode(ctxt, record, typing, Mode::Spec, e1, Mode::Spec)?;
             Ok(Mode::Spec)
         }
-        ExprX::Borrow { expr: e, mutable: _ } => {
+        ExprX::Borrow { expr: e, mutable: _ } | ExprX::Deref(e) => {
             return check_expr_handle_mut_arg(ctxt, record, typing, outer_mode, e);
         }
         ExprX::Binary(op, e1, e2) => {

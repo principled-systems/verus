@@ -418,6 +418,10 @@ fn visit_exp(ctx: &Ctx, state: &mut State, exp: &Exp) -> Exp {
             let exp = visit_exp(ctx, state, e);
             mk_exp_typ(&exp.clone().typ, ExpX::Borrow { exp, mutable: *mutable })
         }
+        ExpX::Deref(e) => {
+            let exp = visit_exp(ctx, state, e);
+            mk_exp_typ(&exp.clone().typ, ExpX::Deref(exp))
+        }
         ExpX::Old(..) => panic!("internal error: unexpected ExpX::Old"),
         ExpX::Call(call_fun, typs, exps) => match call_fun {
             CallFun::Fun(name, _) | CallFun::Recursive(name) => {

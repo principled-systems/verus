@@ -22,6 +22,7 @@ pub type AssignMap = IndexMap<*const Spanned<StmX>, IndexSet<VarIdent>>;
 pub(crate) fn get_loc_var(exp: &Exp) -> UniqueIdent {
     match &exp.x {
         ExpX::Borrow { exp: x, mutable: _ } => get_loc_var(x),
+        ExpX::Deref(x) => get_loc_var(x),
         ExpX::UnaryOpr(UnaryOpr::Field { .. }, x) => get_loc_var(x),
         ExpX::UnaryOpr(UnaryOpr::Box(_) | UnaryOpr::Unbox(_), x) => get_loc_var(x),
         ExpX::VarLoc(x) => x.clone(),
@@ -54,7 +55,7 @@ pub(crate) fn stm_assign(
                 //    arg.x = UnaryOpr(Box, ExpX::Loc(loc))
 
                 exp_visitor_check::<(), _>(arg, &mut ScopeMap::new(), &mut |e, _| {
-                    if let ExpX::Borrow { exp: loc, mutable: _ } = &e.x {
+                    if let ExpX::Borrow { exp: loc, mutable: true } = &e.x {
                         let var = get_loc_var(loc);
                         modified.insert(var);
                     }

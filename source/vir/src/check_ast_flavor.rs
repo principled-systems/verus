@@ -129,7 +129,7 @@ fn expr_no_loc_in_spec(
     expr: &Expr,
     scope_map: &mut VisitorScopeMap,
     in_spec: bool,
-) -> VisitorControlFlow<()> {
+) -> VisitorControlFlow<Expr> {
     let mut recurse_in_spec = |e| match expr_visitor_dfs(
         e,
         scope_map,
@@ -138,7 +138,7 @@ fn expr_no_loc_in_spec(
         },
     ) {
         VisitorControlFlow::Recurse | VisitorControlFlow::Return => Ok(false),
-        VisitorControlFlow::Stop(()) => Err(()),
+        VisitorControlFlow::Stop(expr) => Err(expr),
     };
     match match &expr.x {
         ExprX::Quant(_q, _b, qexpr) => recurse_in_spec(qexpr),
@@ -148,12 +148,12 @@ fn expr_no_loc_in_spec(
         ExprX::AssertBy { vars: _, require, ensure, proof: _ } => {
             recurse_in_spec(require).and_then(|_| recurse_in_spec(ensure))
         }
-        ExprX::VarLoc(_) | ExprX::Borrow { .. } if in_spec => Err(()),
+        ExprX::VarLoc(_) if in_spec => Err(expr.clone()),
         _ => Ok(true),
     } {
         Ok(true) => VisitorControlFlow::Recurse,
         Ok(false) => VisitorControlFlow::Return,
-        Err(()) => VisitorControlFlow::Stop(()),
+        Err(expr) => VisitorControlFlow::Stop(expr),
     }
 }
 
@@ -187,7 +187,7 @@ pub fn check_krate(krate: &Krate) {
                 },
             ) {
                 VisitorControlFlow::Recurse | VisitorControlFlow::Return => Ok(()),
-                VisitorControlFlow::Stop(()) => Err(()),
+                VisitorControlFlow::Stop(expr) => Err(expr),
             }
             .expect("function AST expression uses node that should have been simplified");
         }

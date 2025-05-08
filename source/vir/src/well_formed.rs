@@ -362,6 +362,8 @@ fn check_one_expr(
                         ExprX::UnaryOpr(UnaryOpr::Field { .. }, base) => is_ok(base),
                         ExprX::Block(stmts, Some(e1)) if stmts.len() == 0 => is_ok(e1),
                         ExprX::Ghost { alloc_wrapper: false, tracked: true, expr: e1 } => is_ok(e1),
+                        ExprX::Deref(e) => is_ok(e),
+                        ExprX::Borrow { expr, mutable: true } => is_ok(expr),
                         _ => false,
                     }
                 }
@@ -372,7 +374,7 @@ fn check_one_expr(
                     e => e,
                 };
                 let is_ok = match &arg_x {
-                    ExprX::Borrow { expr: l, mutable: _ } => is_ok(l),
+                    ExprX::Borrow { expr: l, mutable: true } => is_ok(l),
                     _ => false,
                 };
                 if !is_ok {
