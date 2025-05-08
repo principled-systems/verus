@@ -207,7 +207,7 @@ fn check_trigger_expr(
             ExpX::ArrayLiteral(_) => {
                 Err(error(&exp.span, "triggers cannot contain array literals"))
             }
-            ExpX::Borrow(..) | ExpX::VarLoc(..) => Ok(()),
+            ExpX::Borrow { .. } | ExpX::VarLoc(..) => Ok(()),
             ExpX::ExecFnByName(..) => Ok(()),
             ExpX::Call(_, _typs, args) => {
                 check_trigger_expr_args(state, true, args);
