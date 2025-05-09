@@ -91,7 +91,8 @@ fn is_small_expr(expr: &Expr) -> bool {
         ExprX::Const(_) | ExprX::Var(_) | ExprX::VarAt(..) => true,
         ExprX::Unary(UnaryOp::Not | UnaryOp::Clip { .. }, e) => is_small_expr(e),
         ExprX::UnaryOpr(UnaryOpr::Box(_) | UnaryOpr::Unbox(_), _) => panic!("unexpected box"),
-        ExprX::Borrow { .. } => panic!("expr is a location"),
+        ExprX::Borrow { expr, .. } => is_small_expr(expr),
+        ExprX::Deref(e) => is_small_expr(e),
         _ => false,
     }
 }
@@ -564,7 +565,7 @@ fn simplify_one_expr(
             ))
         }
         ExprX::Assign { init_not_mut, lhs, rhs, op: Some(op) } => {
-            match &lhs.x {
+            match &crate::ast_util::strip_borrow_deref(lhs).x {
                 ExprX::VarLoc(id) => {
                     // convert VarLoc to Var to be used on the RHS
                     let var = SpannedTyped::new(&lhs.span, &lhs.typ, ExprX::Var(id.clone()));

@@ -234,6 +234,14 @@ pub fn undecorate_typ(typ: &Typ) -> Typ {
     if let TypX::Decorate(_, _, t) = &**typ { undecorate_typ(t) } else { typ.clone() }
 }
 
+pub fn strip_borrow_deref(expr: &Expr) -> &Expr {
+    match &expr.x {
+        ExprX::Borrow { expr: e, .. } => strip_borrow_deref(e),
+        ExprX::Deref(e) => strip_borrow_deref(e),
+        _ => expr,
+    }
+}
+
 pub fn allowed_bitvector_type(typ: &Typ) -> bool {
     match &*undecorate_typ(typ) {
         TypX::Bool => true,

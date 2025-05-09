@@ -1,7 +1,8 @@
 use crate::ast::{Typ, UnaryOpr, VarIdent};
 use crate::def::Spanned;
 use crate::sst::{Dest, Exp, ExpX, Stm, StmX, Stms, UniqueIdent};
-use crate::sst_visitor::exp_visitor_check;
+use crate::sst_visitor::{exp_visitor_check, exp_visitor_dfs};
+use crate::visitor::VisitorControlFlow;
 use air::scope_map::ScopeMap;
 use indexmap::{IndexMap, IndexSet};
 use std::sync::Arc;
@@ -54,14 +55,16 @@ pub(crate) fn stm_assign(
                 // or
                 //    arg.x = UnaryOpr(Box, ExpX::Loc(loc))
 
-                exp_visitor_check::<(), _>(arg, &mut ScopeMap::new(), &mut |e, _| {
+                dbg!(&arg);
+                exp_visitor_dfs::<(), _>(arg, &mut ScopeMap::new(), &mut |e, _| {
                     if let ExpX::Borrow { exp: loc, mutable: true } = &e.x {
                         let var = get_loc_var(loc);
                         modified.insert(var);
+                        VisitorControlFlow::Return
+                    } else {
+                        VisitorControlFlow::Recurse
                     }
-                    Ok(())
-                })
-                .unwrap();
+                });
             }
             stm.clone()
         }

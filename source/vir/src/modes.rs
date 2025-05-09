@@ -669,6 +669,9 @@ fn get_var_loc_mode(
         ExprX::Deref(e) => {
             get_var_loc_mode(ctxt, record, typing, outer_mode, expr_inner_mode, e, init_not_mut)?
         }
+        ExprX::Borrow { expr: e, mutable: _ } => {
+            get_var_loc_mode(ctxt, record, typing, outer_mode, expr_inner_mode, e, init_not_mut)?
+        }
         _ => {
             panic!("unexpected loc {:?}", expr);
         }
