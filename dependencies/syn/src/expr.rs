@@ -23,9 +23,9 @@ use crate::stmt::Block;
 use crate::ty::ReturnType;
 use crate::ty::Type;
 use crate::verus::{
-    Assert, AssertForall, Assume, BigAnd, BigOr, Decreases, Ensures, ExprGetField, ExprHas,
-    ExprHasNot, ExprIs, ExprIsNot, ExprMatches, Invariant, InvariantEnsures, InvariantExceptBreak,
-    Requires, RevealHide, View,
+    Assert, AssertForall, Assume, BigAnd, BigOr, ClosureArg, Decreases, Ensures, ExprGetField,
+    ExprHas, ExprHasNot, ExprIs, ExprIsNot, ExprMatches, FnProofOptions, Invariant,
+    InvariantEnsures, InvariantExceptBreak, Requires, RevealHide, View,
 };
 use crate::{token, Here};
 use proc_macro2::{Span, TokenStream};
@@ -395,8 +395,10 @@ ast_struct! {
         pub movability: Option<Token![static]>,
         pub asyncness: Option<Token![async]>,
         pub capture: Option<Token![move]>,
+        pub proof_fn: Option<Token![proof_fn]>,
+        pub options: Option<FnProofOptions>,
         pub or1_token: Token![|],
-        pub inputs: Punctuated<Pat, Token![,]>,
+        pub inputs: Punctuated<ClosureArg, Token![,]>,
         pub or2_token: Token![|],
         pub output: ReturnType,
         pub requires: Option<Requires>,
@@ -1000,6 +1002,7 @@ impl Expr {
             | Expr::Unsafe(ExprUnsafe { attrs, .. })
             | Expr::While(ExprWhile { attrs, .. })
             | Expr::Yield(ExprYield { attrs, .. })
+            // verus
             | Expr::Assume(Assume { attrs, .. })
             | Expr::Assert(Assert { attrs, .. })
             | Expr::AssertForall(AssertForall { attrs, .. })
@@ -1264,7 +1267,7 @@ pub(crate) mod parsing {
     use crate::ty::ReturnType;
     use crate::verbatim;
     use crate::verus::{
-        Ensures, ExprGetField, ExprHas, ExprHasNot, ExprIs, ExprIsNot, Requires, View,
+        ClosureArg, Ensures, ExprGetField, ExprHas, ExprHasNot, ExprIs, ExprIsNot, Requires, View,
     };
     #[cfg(feature = "full")]
     use proc_macro2::TokenStream;
@@ -1964,6 +1967,7 @@ pub(crate) mod parsing {
             || input.peek(Token![const]) && !input.peek2(token::Brace)
             || input.peek(Token![static])
             || input.peek(Token![async]) && (input.peek2(Token![|]) || input.peek2(Token![move]))
+            || input.peek(Token![proof_fn])
         {
             expr_closure(input, allow_struct).map(Expr::Closure)
         } else if token::parsing::peek_keyword(input.cursor(), "builtin") && input.peek2(Token![#])
@@ -2776,6 +2780,12 @@ pub(crate) mod parsing {
         let movability: Option<Token![static]> = input.parse()?;
         let asyncness: Option<Token![async]> = input.parse()?;
         let capture: Option<Token![move]> = input.parse()?;
+        let proof_fn: Option<Token![proof_fn]> = input.parse()?;
+        let options = if proof_fn.is_some() {
+            input.parse()?
+        } else {
+            None
+        };
         let or1_token: Token![|] = input.parse()?;
 
         let mut inputs = Punctuated::new();
@@ -2821,6 +2831,8 @@ pub(crate) mod parsing {
             movability,
             asyncness,
             capture,
+            proof_fn,
+            options,
             or1_token,
             inputs,
             or2_token,
@@ -2846,7 +2858,7 @@ pub(crate) mod parsing {
     }
 
     #[cfg(feature = "full")]
-    fn closure_arg(input: ParseStream) -> Result<Pat> {
+    fn closure_arg_pat(input: ParseStream) -> Result<Pat> {
         let attrs = input.call(Attribute::parse_outer)?;
         let mut pat = Pat::parse_single(input)?;
 
@@ -2879,6 +2891,14 @@ pub(crate) mod parsing {
             }
             Ok(pat)
         }
+    }
+
+    #[cfg(feature = "full")]
+    fn closure_arg(input: ParseStream) -> Result<ClosureArg> {
+        Ok(ClosureArg {
+            tracked_token: input.parse()?,
+            pat: closure_arg_pat(input)?,
+        })
     }
 
     #[cfg(feature = "full")]
@@ -3785,6 +3805,8 @@ pub(crate) mod printing {
         e.movability.to_tokens(tokens);
         e.asyncness.to_tokens(tokens);
         e.capture.to_tokens(tokens);
+        e.proof_fn.to_tokens(tokens);
+        e.options.to_tokens(tokens);
         e.or1_token.to_tokens(tokens);
         e.inputs.to_tokens(tokens);
         e.or2_token.to_tokens(tokens);

@@ -73,7 +73,8 @@ pub(crate) fn func_bind(
 }
 
 // arguments for function call f(typ_args, params)
-pub(crate) fn func_def_typs_args(typ_args: &Typs, params: &Pars) -> Vec<Expr> {
+pub(crate) fn func_def_typs_args(ctx: &Ctx, typ_args: &Typs, params: &Pars) -> Vec<Expr> {
+    let typ_to_ids = |typ| typ_to_ids(ctx, typ);
     let mut f_args: Vec<Expr> = typ_args.iter().map(typ_to_ids).flatten().collect();
     for param in params.iter() {
         let name = if matches!(param.x.purpose, ParPurpose::MutPre) {
@@ -87,9 +88,9 @@ pub(crate) fn func_def_typs_args(typ_args: &Typs, params: &Pars) -> Vec<Expr> {
 }
 
 // arguments for function call f(typ_params, params)
-pub(crate) fn func_def_args(typ_params: &Idents, params: &Pars) -> Vec<Expr> {
+pub(crate) fn func_def_args(ctx: &Ctx, typ_params: &Idents, params: &Pars) -> Vec<Expr> {
     let typ_args = Arc::new(vec_map(&typ_params, |x| Arc::new(TypX::TypParam(x.clone()))));
-    func_def_typs_args(&typ_args, params)
+    func_def_typs_args(ctx, &typ_args, params)
 }
 
 // (forall (...) (=> cond (= (f ...) body)))
@@ -102,7 +103,7 @@ fn func_def_quant(
     pre: &Vec<Expr>,
     body: Expr,
 ) -> Result<Expr, VirErr> {
-    let f_args = func_def_typs_args(typ_args, params);
+    let f_args = func_def_typs_args(ctx, typ_args, params);
     let f_app = string_apply(name, &Arc::new(f_args));
     let f_eq = Arc::new(ExprX::Binary(BinaryOp::Eq, f_app.clone(), body));
     let f_imply = mk_implies(&mk_and(pre), &f_eq);
@@ -110,6 +111,7 @@ fn func_def_quant(
 }
 
 pub(crate) fn hide_projections_air(
+    ctx: &Ctx,
     typ_params: &Idents,
     holes: Vec<(Ident, Typ)>,
 ) -> (Idents, Vec<Expr>) {
@@ -117,7 +119,7 @@ pub(crate) fn hide_projections_air(
     let mut eqs: Vec<Expr> = Vec::new();
     for (x, t) in holes {
         let xids = crate::def::suffix_typ_param_ids_types(&x);
-        let tids = typ_to_ids(&t);
+        let tids = typ_to_ids(ctx, &t);
         assert!(xids.len() == tids.len());
         for ((xa, _ta), tid) in xids.into_iter().zip(tids.into_iter()) {
             eqs.push(mk_eq(&ident_var(&xa.lower()), &tid));
@@ -268,7 +270,7 @@ fn func_body_to_air(
     let (name, rec_name, typ_args) =
         if let FunctionKind::TraitMethodImpl { method, trait_typ_args, .. } = &function.x.kind {
             let (trait_typ_args, holes) = crate::traits::hide_projections(trait_typ_args);
-            let (typ_params, eqs) = hide_projections_air(&function.x.typ_params, holes);
+            let (typ_params, eqs) = hide_projections_air(ctx, &function.x.typ_params, holes);
             impl_typ_params = typ_params;
             impl_def_reqs.extend(eqs);
             (method.clone(), function.x.name.clone(), trait_typ_args.clone())
@@ -301,7 +303,7 @@ fn func_body_to_air(
 
         let rec_f = suffix_global_id(&fun_to_air_ident(&prefix_recursive_fun(&rec_name)));
         let fuel_nat_f = prefix_fuel_nat(&fun_to_air_ident(&rec_name));
-        let args = func_def_args(&function.x.typ_params, pars);
+        let args = func_def_args(ctx, &function.x.typ_params, pars);
         let mut args_zero = args.clone();
         let mut args_fuel = args.clone();
         let mut args_succ = args.clone();
@@ -383,7 +385,7 @@ fn req_ens_to_air(
         match inherit_from {
             None => {}
             Some((name, trait_typ_args)) => {
-                let args = func_def_typs_args(&trait_typ_args, params);
+                let args = func_def_typs_args(ctx, &trait_typ_args, params);
                 let f_app = string_apply(&name, &Arc::new(args));
                 exprs.push(f_app);
             }
@@ -675,6 +677,7 @@ pub fn func_axioms_to_air(
     function: &FunctionSst,
     public_body: bool,
 ) -> Result<(Commands, Vec<CommandsWithContext>), VirErr> {
+    let typ_to_ids = |typ| typ_to_ids(ctx, typ);
     let func_axioms_sst = &function.x.axioms;
     let mut decl_commands: Vec<Command> = Vec::new();
     let mut check_commands: Vec<CommandsWithContext> = Vec::new();
@@ -701,7 +704,8 @@ pub fn func_axioms_to_air(
                     // Emit axiom that says our method equals the default method we inherit from
                     // (if trait bounds are satisfied)
                     let (trait_typ_args, holes) = crate::traits::hide_projections(trait_typ_args);
-                    let (typ_params, eqs) = hide_projections_air(&function.x.typ_params, holes);
+                    let (typ_params, eqs) =
+                        hide_projections_air(ctx, &function.x.typ_params, holes);
                     let mut args: Vec<Expr> =
                         trait_typ_args.iter().map(typ_to_ids).flatten().collect();
                     for p in function.x.pars.iter() {
@@ -732,32 +736,49 @@ pub fn func_axioms_to_air(
                 return Ok((Arc::new(decl_commands), check_commands));
             }
 
-            let name = suffix_global_id(&fun_to_air_ident(&function.x.name));
+            let mk_inv = |decl_commands: &mut Vec<Command>, name: &Fun, qid: &str, is_rec: bool| {
+                let name = suffix_global_id(&fun_to_air_ident(name));
 
-            // Return typing invariant
-            let mut f_args: Vec<Expr> = Vec::new();
-            let mut f_pre: Vec<Expr> = Vec::new();
-            for typ_param in function.x.typ_params.iter() {
-                let ids = suffix_typ_param_ids(&typ_param);
-                f_args.extend(ids.iter().map(|x| ident_var(&x.lower())));
-            }
-            for param in function.x.pars.iter() {
-                let arg = ident_var(&param.x.name.lower());
-                f_args.push(arg.clone());
-                if let Some(pre) = typ_invariant(ctx, &param.x.typ, &arg) {
-                    f_pre.push(pre.clone());
+                // Return typing invariant
+                let mut f_args: Vec<Expr> = Vec::new();
+                let mut f_pre: Vec<Expr> = Vec::new();
+                for typ_param in function.x.typ_params.iter() {
+                    let ids = suffix_typ_param_ids(&typ_param);
+                    f_args.extend(ids.iter().map(|x| ident_var(&x.lower())));
                 }
-            }
-            let f_app = ident_apply(&name, &Arc::new(f_args));
-            if let Some(post) = typ_invariant(ctx, &function.x.ret.x.typ, &f_app) {
-                // (axiom (forall (...) (=> pre post)))
-                let name = format!("{}_pre_post", name);
-                let e_forall = mk_bind_expr(
-                    &func_bind(ctx, name, &function.x.typ_params, &function.x.pars, &f_app, false),
-                    &mk_implies(&mk_and(&f_pre), &post),
-                );
-                let inv_axiom = mk_unnamed_axiom(e_forall);
-                decl_commands.push(Arc::new(CommandX::Global(inv_axiom)));
+                for param in function.x.pars.iter() {
+                    let arg = ident_var(&param.x.name.lower());
+                    f_args.push(arg.clone());
+                    if let Some(pre) = typ_invariant(ctx, &param.x.typ, &arg) {
+                        f_pre.push(pre.clone());
+                    }
+                }
+                if is_rec {
+                    f_args.push(str_var(FUEL_PARAM));
+                }
+                let f_app = ident_apply(&name, &Arc::new(f_args));
+                if let Some(post) = typ_invariant(ctx, &function.x.ret.x.typ, &f_app) {
+                    // (axiom (forall (...) (=> pre post)))
+                    let name = format!("{}{}", name, qid);
+                    let e_forall = mk_bind_expr(
+                        &func_bind(
+                            ctx,
+                            name,
+                            &function.x.typ_params,
+                            &function.x.pars,
+                            &f_app,
+                            is_rec,
+                        ),
+                        &mk_implies(&mk_and(&f_pre), &post),
+                    );
+                    let inv_axiom = mk_unnamed_axiom(e_forall);
+                    decl_commands.push(Arc::new(CommandX::Global(inv_axiom)));
+                }
+            };
+            mk_inv(&mut decl_commands, &function.x.name, "_pre_post", false);
+            if function.x.has.has_body && function.x.has.is_recursive {
+                let name = prefix_recursive_fun(&function.x.name);
+                mk_inv(&mut decl_commands, &name, "_pre_post_rec", true);
             }
         }
         Mode::Exec | Mode::Proof => {

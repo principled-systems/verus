@@ -106,6 +106,7 @@ impl Printer {
     pub fn expr_view(&mut self, expr: &syn_verus::View) {
         // Similar to expr_tyr
         self.outer_attrs(&expr.attrs);
+        self.expr(&expr.expr, FixupContext::NONE);
         self.word("@");
     }
 
@@ -486,7 +487,7 @@ impl Printer {
             if pat.is_first {
                 self.zerobreak();
             }
-            self.pat(&pat);
+            self.pat(&pat.pat);
             if !pat.is_last {
                 self.word(",");
                 self.space();

@@ -756,6 +756,7 @@ define_keywords! {
     "ensures"     pub struct Ensures
     "returns"     pub struct Returns
     "decreases"   pub struct Decreases
+    "with"        pub struct With
     "opens_invariants"   pub struct OpensInvariants
     "invariant_except_break"   pub struct InvariantExceptBreak
     "no_unwind"   pub struct NoUnwind
@@ -775,6 +776,7 @@ define_keywords! {
     "isnt"        pub struct IsNot
     "FnSpec"      pub struct FnSpec
     "spec_fn"     pub struct SpecFn
+    "proof_fn"    pub struct ProofFn
     "via"         pub struct Via
     "when"        pub struct When
     "any"         pub struct InvAny
@@ -1043,6 +1045,7 @@ macro_rules! Token {
     [ensures]     => { $crate::token::Ensures };
     [returns]     => { $crate::token::Returns };
     [decreases]   => { $crate::token::Decreases };
+    [with]   => { $crate::token::With };
     [opens_invariants]   => { $crate::token::OpensInvariants };
     [invariant_except_break]   => { $crate::token::InvariantExceptBreak };
     [no_unwind]   => { $crate::token::NoUnwind };
@@ -1074,6 +1077,7 @@ macro_rules! Token {
     [group]       => { $crate::token::BroadcastGroup };
     [FnSpec]      => { $crate::token::FnSpec };
     [SpecFn]      => { $crate::token::SpecFn };
+    [proof_fn]    => { $crate::token::ProofFn };
     [assume_specification]   => { $crate::token::AssumeSpecification };
     [here]        => { $crate::token::Here };
     [&&&]         => { $crate::token::BigAnd };

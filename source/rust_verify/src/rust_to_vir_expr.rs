@@ -572,6 +572,10 @@ pub(crate) fn pattern_to_vir_inner<'tcx>(
             return pattern_to_vir(bctx, pat);
         }
         PatKind::Or(pats) => {
+            if pats.len() == 1 {
+                return pattern_to_vir(bctx, &pats[0]);
+            }
+
             assert!(pats.len() >= 2);
 
             let mut patterns: Vec<vir::ast::Pattern> = Vec::new();
@@ -1337,6 +1341,64 @@ pub(crate) fn expr_to_vir_with_adjustments<'tcx>(
     }
 }
 
+/// Callers must guarantee that expr_vir is a vir representation of expr.
+pub(crate) fn expr_cast_enum_int_to_vir<'tcx>(
+    bctx: &BodyCtxt<'tcx>,
+    expr: &'tcx Expr<'tcx>,
+    expr_vir: vir::ast::Expr,
+    mk_expr: impl Fn(ExprX) -> Result<vir::ast::Expr, vir::messages::Message>,
+) -> Result<vir::ast::Expr, VirErr> {
+    let tcx = bctx.ctxt.tcx;
+    let ty = bctx.types.node_type(expr.hir_id);
+    assert!(ty.is_enum());
+    if let ExprKind::Path(QPath::Resolved(
+        None,
+        rustc_hir::Path {
+            res: res @ Res::Def(DefKind::Ctor(CtorOf::Variant, _) | DefKind::Variant, _),
+            ..
+        },
+    )) = expr.kind
+    {
+        if let Ok((enum_did, vdef, true, _is_union)) = get_adt_res(tcx, *res, expr.span, false) {
+            let adt = tcx.adt_def(enum_did);
+            let idx = adt.variant_index_with_id(vdef.def_id);
+            let val = adt.discriminant_for_variant(tcx, idx).val;
+            return mk_expr(ExprX::Const(vir::ast_util::const_int_from_u128(val)));
+        }
+    }
+
+    let TyKind::Adt(adt, _) = ty.kind() else {
+        unreachable!();
+    };
+    let mut vir_arms: Vec<vir::ast::Arm> = Vec::new();
+    for (idx, vdef) in adt.variants().iter_enumerated() {
+        let val = adt.discriminant_for_variant(tcx, idx).val;
+        let cast_to = mk_expr(ExprX::Const(vir::ast_util::const_int_from_u128(val)))?;
+        unsupported_err_unless!(
+            vdef.fields.len() == 0,
+            expr.span,
+            "Enum variant should not contain any fields."
+        );
+        let variant_name = vdef.name.to_string();
+        let (adt_path, _) =
+            crate::fn_call_to_vir::check_variant_field(bctx, expr.span, expr, &variant_name, None)?;
+
+        let pattern = bctx.spanned_typed_new(
+            expr.span,
+            &expr_vir.typ,
+            PatternX::Constructor(adt_path, Arc::new(variant_name), Arc::new(vec![])),
+        );
+        let mut erasure_info = bctx.ctxt.erasure_info.borrow_mut();
+        erasure_info.hir_vir_ids.push((expr.hir_id, pattern.span.id));
+        let guard = mk_expr(ExprX::Const(Constant::Bool(true)))?;
+        let body = cast_to;
+        let vir_arm = bctx.spanned_new(expr.span, ArmX { pattern, guard, body });
+        vir_arms.push(vir_arm);
+    }
+    unsupported_err_unless!(vir_arms.len() > 0, expr.span, "Zero-sized empty Enum expr");
+    return Ok(mk_expr(ExprX::Match(expr_vir, Arc::new(vir_arms)))?);
+}
+
 pub(crate) fn expr_to_vir_innermost<'tcx>(
     bctx: &BodyCtxt<'tcx>,
     expr: &Expr<'tcx>,
@@ -1522,6 +1584,10 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                     let vir_args = vec_map_result(&args, |arg| expr_to_vir(bctx, arg, modifier))?;
                     let expr_typ = typ_of_node(bctx, expr.span, &expr.hir_id, false)?;
 
+                    let proof_fn = crate::rust_to_vir_base::try_get_proof_fn_modes(
+                        &bctx.ctxt, expr.span, &fun_ty,
+                    )?;
+                    let is_proof_fun = proof_fn.is_some();
                     let is_spec_fn = match &*undecorate_typ(&vir_fun.typ) {
                         TypX::SpecFn(..) => true,
                         _ => false,
@@ -1542,7 +1608,7 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                         let span = bctx.ctxt.spans.to_air_span(expr.span.clone());
                         let tup = vir::ast_util::mk_tuple(&span, &Arc::new(vir_args));
                         let helper_fun =
-                            vir::def::exec_nonstatic_call_fun(&bctx.ctxt.vstd_crate_name);
+                            vir::def::nonstatic_call_fun(&bctx.ctxt.vstd_crate_name, is_proof_fun);
                         let ret_typ = expr_typ.clone();
 
                         // Anything that goes in `typ_args` needs to have the correct
@@ -1574,6 +1640,21 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                             &fun_ty,
                             true,
                         )?;
+
+                        let (kind, rcall) = if let Some((arg_modes, ret_mode)) = proof_fn {
+                            if arg_modes.len() != args.len() {
+                                return err_span(
+                                    expr.span,
+                                    "could not read mode annotations from proof_fn type",
+                                );
+                            }
+                            let arg_modes = Arc::new(arg_modes);
+                            let r = ResolvedCall::NonStaticProof(arg_modes.clone());
+                            let k = vir::ast::CallTargetKind::ProofFn(arg_modes, ret_mode);
+                            (k, r)
+                        } else {
+                            (vir::ast::CallTargetKind::Static, ResolvedCall::NonStaticExec)
+                        };
 
                         // Get impl_paths for the trait bound
                         // fun_ty : FnOnce<Args>
@@ -1609,14 +1690,14 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                         let typ_args = Arc::new(vec![tup_typ, ret_typ, fun_typ]);
                         (
                             CallTarget::Fun(
-                                vir::ast::CallTargetKind::Static,
+                                kind,
                                 helper_fun,
                                 typ_args,
                                 impl_paths,
                                 AutospecUsage::Final,
                             ),
                             vec![vir_fun, tup],
-                            ResolvedCall::NonStaticExec,
+                            rcall,
                         )
                     };
 
@@ -1728,6 +1809,10 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                     let zero = mk_expr(ExprX::Const(vir::ast_util::const_int_from_u128(0)))?;
                     let one = mk_expr(ExprX::Const(vir::ast_util::const_int_from_u128(1)))?;
                     mk_expr(ExprX::If(source_vir, one, Some(zero)))
+                }
+                (_, TypX::Int(_)) if bctx.types.node_type(source.hir_id).is_enum() => {
+                    let cast_to = expr_cast_enum_int_to_vir(bctx, source, source_vir, mk_expr)?;
+                    Ok(mk_ty_clip(&to_vir_ty, &cast_to, expr_vattrs.truncate))
                 }
                 _ => {
                     let source_ty = bctx.types.expr_ty_adjusted(source);
@@ -1932,7 +2017,14 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                         ));
                         return Ok(vir_expr);
                     } else {
-                        unsupported_err!(expr.span, "associated constants");
+                        let path = def_id_to_vir_path(tcx, &bctx.ctxt.verus_items, id);
+                        let fun = FunX { path };
+                        let autospec_usage = if bctx.in_ghost {
+                            AutospecUsage::IfMarked
+                        } else {
+                            AutospecUsage::Final
+                        };
+                        mk_expr(ExprX::ConstVar(Arc::new(fun), autospec_usage))
                     }
                 }
                 Res::Def(DefKind::Const, id) => {
@@ -1971,6 +2063,7 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                     };
                     match *undecorate_typ(&expr_typ()?) {
                         TypX::Int(_) => {}
+                        TypX::Bool => {}
                         _ => {
                             unsupported_err!(expr.span, format!("non-int ConstParam {:?}", id))
                         }
@@ -2120,6 +2213,14 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
             let mut body = block_to_vir(bctx, block, &expr.span, &typ, ExprModifier::REGULAR)?;
             let header = vir::headers::read_header(&mut body)?;
             let label = label.map(|l| l.ident.to_string());
+            use crate::attributes::get_allow_exec_allows_no_decreases_clause_walk_parents;
+            let allow_no_decreases =
+                get_allow_exec_allows_no_decreases_clause_walk_parents(bctx.ctxt.tcx, bctx.fun_id);
+            let decrease = if expr_vattrs.auto_decreases && allow_no_decreases {
+                Arc::new(vec![])
+            } else {
+                header.decrease.clone()
+            };
             Ok(bctx.spanned_typed_new(
                 *header_span,
                 &expr_typ()?,
@@ -2130,7 +2231,7 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                     cond: None,
                     body,
                     invs: header.loop_invariants(),
-                    decrease: header.decrease,
+                    decrease,
                 },
             ))
         }
@@ -2261,7 +2362,7 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                 let closure_body = find_body(&bctx.ctxt, body_id);
                 expr_to_vir(bctx, closure_body.value, modifier)
             } else {
-                closure_to_vir(bctx, expr, expr_typ()?, false, modifier)
+                closure_to_vir(bctx, expr, expr_typ()?, false, None, modifier)
             }
         }
         ExprKind::Index(tgt_expr, idx_expr, _span) => {
@@ -2830,6 +2931,7 @@ pub(crate) fn closure_to_vir<'tcx>(
     closure_expr: &Expr<'tcx>,
     closure_vir_typ: Typ,
     is_spec_fn: bool,
+    proof_fn_modes: Option<(Arc<Vec<Mode>>, Mode)>,
     modifier: ExprModifier,
 ) -> Result<vir::ast::Expr, VirErr> {
     if let ExprKind::Closure(Closure { fn_decl, body: body_id, .. }) = &closure_expr.kind {
@@ -2895,8 +2997,9 @@ pub(crate) fn closure_to_vir<'tcx>(
 
             let ret = Arc::new(VarBinderX { name: id, a: ret_typ });
 
-            ExprX::ExecClosure {
+            ExprX::NonSpecClosure {
                 params: Arc::new(params),
+                proof_fn_modes,
                 body,
                 requires: require,
                 ensures: ensure,
