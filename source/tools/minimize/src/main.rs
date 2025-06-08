@@ -1762,6 +1762,7 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
             let original_file = root_path.join(next_file.clone());
 
             // Anvil
+            // eprintln!("root path: {:?}", root_path);
             let deps_hack_path = root_path.join("deps_hack");
 
             running.push(std::thread::spawn(move || {
@@ -1907,6 +1908,23 @@ fn run_verus(
 
     let verus_path = current_dir().unwrap().join("../../target-verus/release/verus");
 
+    let cmd = std::process::Command::new(verus_path)
+        .current_dir(proj_path)
+        .arg("-L")
+        .arg("dependency=deps_hack/target/debug/deps")
+        .arg("--extern=deps_hack=deps_hack/target/debug/libdeps_hack.rlib")
+        .arg("lib.rs")
+        .arg("--rlimit")
+        .arg("50")
+        .arg("--crate-type=lib")
+        .arg("--output-json")
+        .arg("--time")
+        .arg("--num-threads")
+        .arg(num_threads.to_string())
+        .stdout(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| (format!("failed to run verus: {}", e), 0))?;
+
     // let cmd = std::process::Command::new(verus_path)
     //     .arg("--crate-type=dylib")
     //     .arg("--output-json")
@@ -1919,24 +1937,6 @@ fn run_verus(
     //     .stdout(std::process::Stdio::piped())
     //     .output()
     //     .map_err(|e| (format!("failed to run verus: {}", e), 0))?;
-
-    let cmd = std::process::Command::new(verus_path)
-        .current_dir(proj_path)
-        .arg("-L")
-        .arg("dependency=deps_hack/target/debug/deps")
-        .arg("--extern=deps_hack=deps_hack/target/debug/libdeps_hack.rlib")
-        .arg("anvil.rs")
-        .arg("--rlimit")
-        .arg("90")
-        .arg("--crate-type=lib")
-        .arg("--no-lifetime") // https://github.com/anvil-verifier/anvil/issues/599
-        .arg("--output-json")
-        .arg("--time")
-        .arg("--num-threads")
-        .arg(num_threads.to_string())
-        .stdout(std::process::Stdio::piped())
-        .output()
-        .map_err(|e| (format!("failed to run verus: {}", e), 0))?;
 
     // print stderr
     // eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
