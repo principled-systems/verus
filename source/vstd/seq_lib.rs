@@ -69,7 +69,7 @@ impl<A> Seq<A> {
     /// ## Example
     ///
     /// ```rust
-    /// {{#include ../../../rust_verify/example/multiset.rs:sorted_by_leq}}
+    /// {{#include ../../../../examples/multiset.rs:sorted_by_leq}}
     /// ```
     pub closed spec fn sort_by(self, leq: spec_fn(A, A) -> bool) -> Seq<A>
         recommends
@@ -602,6 +602,37 @@ impl<A> Seq<A> {
         }
     }
 
+    /// A lemma that proves how [`Self::fold_left`] distributes over splitting a sequence.
+    pub broadcast proof fn lemma_fold_left_split<B>(self, b: B, f: spec_fn(B, A) -> B, k: int)
+        requires
+            0 <= k <= self.len(),
+        ensures
+            self.subrange(k, self.len() as int).fold_left(
+                (#[trigger] self.subrange(0, k).fold_left(b, f)),
+                f,
+            ) == self.fold_left(b, f),
+        decreases self.len(),
+    {
+        reveal_with_fuel(Seq::fold_left, 2);
+        if k == self.len() {
+            assert(self.subrange(0, self.len() as int) == self);
+        } else {
+            self.drop_last().lemma_fold_left_split(b, f, k);
+            assert_seqs_equal!(
+                self.drop_last().subrange(k, self.drop_last().len() as int) ==
+                self.subrange(k, self.len()-1)
+            );
+            assert_seqs_equal!(
+                self.drop_last().subrange(0, k) ==
+                self.subrange(0, k)
+            );
+            assert_seqs_equal!(
+                self.subrange(k, self.len() as int).drop_last() ==
+                self.subrange(k, self.len() - 1)
+            );
+        }
+    }
+
     /// An auxiliary lemma for proving [`Self::lemma_fold_left_alt`].
     proof fn aux_lemma_fold_left_alt<B>(self, b: B, f: spec_fn(B, A) -> B, k: int)
         requires
@@ -684,12 +715,14 @@ impl<A> Seq<A> {
     }
 
     /// A lemma that proves how [`Self::fold_right`] distributes over splitting a sequence.
-    pub proof fn lemma_fold_right_split<B>(self, f: spec_fn(A, B) -> B, b: B, k: int)
+    pub broadcast proof fn lemma_fold_right_split<B>(self, f: spec_fn(A, B) -> B, b: B, k: int)
         requires
             0 <= k <= self.len(),
         ensures
-            self.subrange(0, k).fold_right(f, self.subrange(k, self.len() as int).fold_right(f, b))
-                == self.fold_right(f, b),
+            self.subrange(0, k).fold_right(
+                f,
+                (#[trigger] self.subrange(k, self.len() as int).fold_right(f, b)),
+            ) == self.fold_right(f, b),
         decreases self.len(),
     {
         reveal_with_fuel(Seq::fold_right, 2);
@@ -905,7 +938,7 @@ impl<A> Seq<A> {
             self.to_set().len() <= self.len(),
         decreases self.len(),
     {
-        broadcast use super::set::group_set_axioms, seq_to_set_is_finite;
+        broadcast use {super::set::group_set_axioms, seq_to_set_is_finite};
         broadcast use group_seq_properties;
         broadcast use super::set_lib::group_set_properties;
 
@@ -922,7 +955,7 @@ impl<A> Seq<A> {
         ensures
             self.to_set().len() == 0 <==> self.len() == 0,
     {
-        broadcast use super::set::group_set_axioms, seq_to_set_is_finite;
+        broadcast use {super::set::group_set_axioms, seq_to_set_is_finite};
 
         assert(self.len() == 0 ==> self.to_set().len() == 0) by { self.lemma_cardinality_of_set() }
         assert(!(self.len() == 0) ==> !(self.to_set().len() == 0)) by {
@@ -942,7 +975,7 @@ impl<A> Seq<A> {
             self.no_duplicates(),
         decreases self.len(),
     {
-        broadcast use super::set::group_set_axioms, seq_to_set_is_finite;
+        broadcast use {super::set::group_set_axioms, seq_to_set_is_finite};
 
         if self.len() == 0 {
         } else {
@@ -960,6 +993,46 @@ impl<A> Seq<A> {
                 self.drop_first().lemma_no_dup_set_cardinality();
             }
         }
+    }
+
+    /// Mapping a function over a sequence and converting to a set is the same
+    /// as mapping it over the sequence converted to a set.
+    pub broadcast proof fn lemma_to_set_map_commutes<B>(self, f: spec_fn(A) -> B)
+        ensures
+            #[trigger] self.to_set().map(f) =~= self.map_values(f).to_set(),
+    {
+        broadcast use crate::vstd::group_vstd_default;
+
+        assert forall|elem: B|
+            self.to_set().map(f).contains(elem) <==> self.map_values(f).to_set().contains(elem) by {
+            if self.to_set().map(f).contains(elem) {
+                let x = choose|x: A| self.to_set().contains(x) && f(x) == elem;
+                let i = choose|i: int| 0 <= i < self.len() && self[i] == x;
+                assert(self.map_values(f)[i] == elem);
+            }
+            if self.map_values(f).to_set().contains(elem) {
+                let i = choose|i: int|
+                    0 <= i < self.map_values(f).len() && self.map_values(f)[i] == elem;
+                let x = self[i];
+                assert(self.to_set().contains(x));
+            }
+        };
+    }
+
+    /// Appending an element to a sequence and converting to set, is equal
+    /// to converting to set and inserting it.
+    pub broadcast proof fn lemma_to_set_insert_commutes(sq: Seq<A>, elt: A)
+        requires
+        ensures
+            #[trigger] (sq + seq![elt]).to_set() =~= sq.to_set().insert(elt),
+    {
+        broadcast use crate::vstd::group_vstd_default;
+        broadcast use lemma_seq_concat_contains_all_elements;
+        broadcast use lemma_seq_empty_contains_nothing;
+        broadcast use lemma_seq_contains_after_push;
+        broadcast use super::seq::group_seq_axioms;
+        broadcast use super::set_lib::group_set_properties;
+
     }
 }
 
@@ -1090,7 +1163,7 @@ impl<A> Seq<Seq<A>> {
             self.flatten() =~= self.flatten_alt(),
         decreases self.len(),
     {
-        broadcast use Seq::add_empty_right, Seq::push_distributes_over_add;
+        broadcast use {Seq::add_empty_right, Seq::push_distributes_over_add};
 
         if self.len() != 0 {
             self.drop_last().lemma_flatten_and_flatten_alt_are_equivalent();
@@ -1584,6 +1657,16 @@ pub broadcast proof fn seq_to_set_is_finite<A>(seq: Seq<A>)
     }
 }
 
+pub proof fn seq_to_set_distributes_over_add<T>(s1: Seq<T>, s2: Seq<T>)
+    ensures
+        s1.to_set() + s2.to_set() =~= (s1 + s2).to_set(),
+{
+    broadcast use super::group_vstd_default;
+    broadcast use super::set_lib::group_set_properties;
+    broadcast use group_seq_properties;
+
+}
+
 /// If sequences a and b don't have duplicates, and there are no
 /// elements in common between them, then the concatenated sequence
 /// a + b will not contain duplicates either.
@@ -1750,9 +1833,7 @@ pub broadcast proof fn lemma_seq_concat_contains_all_elements<A>(x: Seq<A>, y: S
 /// After pushing an element onto a sequence, the sequence contains that element
 pub broadcast proof fn lemma_seq_contains_after_push<A>(s: Seq<A>, v: A, x: A)
     ensures
-        (#[trigger] s.push(v).contains(x) <==> v == x || s.contains(x)) && #[trigger] s.push(
-            v,
-        ).contains(v),
+        #[trigger] s.push(v).contains(x) <==> v == x || s.contains(x),
 {
     assert forall|elt: A| #[trigger] s.contains(elt) implies #[trigger] s.push(v).contains(elt) by {
         let index = choose|i: int| 0 <= i < s.len() && s[i] == elt;
@@ -2030,10 +2111,7 @@ pub proof fn lemma_seq_properties<A>()
         forall|s: Seq<A>| #[trigger] s.len() == 0 ==> s =~= Seq::<A>::empty(),  //from lemma_seq_empty_equality(s),
         forall|x: Seq<A>, y: Seq<A>, elt: A| #[trigger]
             (x + y).contains(elt) <==> x.contains(elt) || y.contains(elt),  //from lemma_seq_concat_contains_all_elements(x, y, elt),
-        forall|s: Seq<A>, v: A, x: A|
-            (#[trigger] s.push(v).contains(x) <==> v == x || s.contains(x)) && #[trigger] s.push(
-                v,
-            ).contains(v),  //from lemma_seq_contains_after_push(s, v, x)
+        forall|s: Seq<A>, v: A, x: A| #[trigger] s.push(v).contains(x) <==> v == x || s.contains(x),  //from lemma_seq_contains_after_push(s, v, x)
         forall|s: Seq<A>, start: int, stop: int, x: A|
             (0 <= start <= stop <= s.len() && #[trigger] s.subrange(start, stop).contains(x)) <==> (
             exists|i: int| 0 <= start <= i < stop <= s.len() && #[trigger] s[i] == x),  //from lemma_seq_subrange_elements(s, start, stop, x),
@@ -2077,7 +2155,7 @@ pub proof fn lemma_seq_properties<A>()
             s.contains(a) <==> #[trigger] s.to_multiset().count(a)
                 > 0,  //from to_multiset_ensures
 {
-    broadcast use group_seq_properties, lemma_seq_skip_of_skip;
+    broadcast use {group_seq_properties, lemma_seq_skip_of_skip};
     // TODO: for some reason this still needs to be explicitly stated
 
     assert forall|s: Seq<A>, v: A, x: A| v == x || s.contains(x) implies #[trigger] s.push(
@@ -2190,6 +2268,8 @@ pub broadcast group group_seq_lib_default {
     Seq::push_distributes_over_add,
     Seq::filter_distributes_over_add,
     seq_to_set_is_finite,
+    Seq::lemma_fold_right_split,
+    Seq::lemma_fold_left_split,
 }
 
 pub broadcast group group_to_multiset_ensures {
