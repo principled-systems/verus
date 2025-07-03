@@ -309,7 +309,7 @@ pub(crate) fn translate_impl<'tcx>(
             for impl_item_ref in impll.items {
                 match impl_item_ref.kind {
                     AssocItemKind::Fn { has_self } if has_self => {
-                        let impl_item = ctxt.tcx.hir().impl_item(impl_item_ref.id);
+                        let impl_item = ctxt.tcx.hir_impl_item(impl_item_ref.id);
                         if let ImplItemKind::Fn(sig, _) = &impl_item.kind {
                             ctxt.erasure_info
                                 .borrow_mut()
@@ -368,8 +368,8 @@ pub(crate) fn translate_impl<'tcx>(
     };
 
     for impl_item_ref in impll.items {
-        let impl_item = ctxt.tcx.hir().impl_item(impl_item_ref.id);
-        let fn_attrs = ctxt.tcx.hir().attrs(impl_item.hir_id());
+        let impl_item = ctxt.tcx.hir_impl_item(impl_item_ref.id);
+        let fn_attrs = ctxt.tcx.hir_attrs(impl_item.hir_id());
 
         if crate_items.is_impl_item_external(impl_item_ref.id) {
             if trait_path_typ_args.is_some() {
@@ -414,10 +414,10 @@ pub(crate) fn translate_impl<'tcx>(
                             impl_item_visibility,
                             &module_path,
                             fn_attrs,
-                            sig,
+                            &sig,
                             Some((&impll.generics, impl_def_id)),
                             &impl_item.generics,
-                            CheckItemFnEither::BodyId(body_id),
+                            CheckItemFnEither::BodyId(&body_id),
                             None,
                             None,
                             external_info,
@@ -476,14 +476,14 @@ pub(crate) fn translate_impl<'tcx>(
                     )?;
                     crate::rust_to_vir_func::check_item_const_or_static(
                         ctxt,
-                        vir,
+                        &mut vir.functions,
                         impl_item.span,
                         impl_item.owner_id.to_def_id(),
                         mk_visibility(ctxt, impl_item.owner_id.to_def_id()),
                         &module_path,
-                        ctxt.tcx.hir().attrs(impl_item.hir_id()),
+                        ctxt.tcx.hir_attrs(impl_item.hir_id()),
                         &vir_ty,
-                        body_id,
+                        &body_id,
                         false,
                     )?;
                 } else {
@@ -547,8 +547,13 @@ pub(crate) fn collect_external_trait_impls<'tcx>(
     all_trait_ids.extend(external_info.local_trait_ids.iter().cloned());
     external_info.trait_id_set.extend(all_trait_ids.iter().cloned());
 
-    let trait_map: HashMap<Path, Trait> =
-        krate.traits.iter().map(|t| (t.x.name.clone(), t.clone())).collect();
+    let mut trait_map: HashMap<Path, Vec<Trait>> =
+        krate.traits.iter().map(|t| (t.x.name.clone(), vec![t.clone()])).collect();
+    for k in imported {
+        for t in k.traits.iter() {
+            trait_map.entry(t.x.name.clone()).or_default().push(t.clone());
+        }
+    }
 
     // Next, collect all possible new implementations of traits known to Verus:
     let mut auto_import_impls: Vec<DefId> = Vec::new();
@@ -603,9 +608,9 @@ pub(crate) fn collect_external_trait_impls<'tcx>(
             let mut assoc_type_impls: Vec<AssocTypeImpl> = Vec::new();
             for assoc_item in tcx.associated_items(impl_def_id).in_definition_order() {
                 match assoc_item.kind {
-                    rustc_middle::ty::AssocKind::Type => {
+                    rustc_middle::ty::AssocKind::Type { .. } => {
                         let name = Arc::new(assoc_item.ident(tcx).to_string());
-                        if !trait_map[&trait_path].x.assoc_typs.contains(&name) {
+                        if !trait_map[&trait_path].iter().any(|t| t.x.assoc_typs.contains(&name)) {
                             continue;
                         }
                         if !crate::rust_to_vir_base::mid_ty_filter_for_external_impls(
@@ -691,6 +696,10 @@ pub(crate) fn collect_external_trait_impls<'tcx>(
         }
 
         for method in traitt.x.methods.iter() {
+            let f = &func_map[method];
+            if matches!(&f.x.kind, FunctionKind::TraitMethodDecl { has_default: true, .. }) {
+                continue;
+            }
             if !methods_we_have.contains::<vir::ast::Ident>(&method.path.last_segment()) {
                 return err_span(
                     span,

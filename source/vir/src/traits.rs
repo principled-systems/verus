@@ -72,7 +72,7 @@ fn demote_one_expr(
             // Calls to external trait default functions are considered to be calls
             // to the trait declaration (since we have a spec for the declaration)
             let ct = CallTarget::Fun(
-                CallTargetKind::Dynamic,
+                CallTargetKind::ExternalTraitDefault,
                 fun.clone(),
                 typs.clone(),
                 impl_paths.clone(),
@@ -426,7 +426,7 @@ pub fn inherit_default_bodies(krate: &Krate) -> Result<Krate, VirErr> {
                     ret,
                     ens_has_return: default_function.x.ens_has_return,
                     require: Arc::new(vec![]),
-                    ensure: Arc::new(vec![]),
+                    ensure: (Arc::new(vec![]), Arc::new(vec![])),
                     returns: None,
                     decrease: Arc::new(vec![]),
                     decrease_when: None,
@@ -713,7 +713,7 @@ pub fn trait_bound_axioms(ctx: &Ctx, traits: &Vec<Trait>) -> Commands {
                 &Arc::new(typ_params),
                 &Arc::new(vec![]),
                 &trigs,
-                false,
+                None,
             );
             let imply = air::ast_util::mk_implies(&tr_bound, &air::ast_util::mk_and(&typ_bounds));
             let forall = mk_bind_expr(&bind, &imply);
@@ -736,11 +736,11 @@ pub fn trait_bound_axioms(ctx: &Ctx, traits: &Vec<Trait>) -> Commands {
 // This function returns a new type with projections replace by holes,
 // along with a vector of H = typ equations.
 pub(crate) fn hide_projections(typs: &Typs) -> (Typs, Vec<(Ident, Typ)>) {
-    use crate::ast_visitor::{Rewrite, TypVisitor};
+    use crate::ast_visitor::{AstVisitor, NoScoper, Rewrite};
     struct ProjVisitor {
         holes: Vec<(Ident, Typ)>,
     }
-    impl TypVisitor<Rewrite, ()> for ProjVisitor {
+    impl AstVisitor<Rewrite, (), NoScoper> for ProjVisitor {
         fn visit_typ(&mut self, typ: &Typ) -> Result<Typ, ()> {
             match &**typ {
                 TypX::Projection { .. } => {
@@ -785,7 +785,7 @@ pub fn trait_impl_to_air(ctx: &Ctx, imp: &TraitImpl) -> Commands {
         &typ_params,
         &Arc::new(vec![]),
         &trigs,
-        false,
+        None,
     );
     let mut req_bounds = trait_bounds_to_air(ctx, &imp.x.typ_bounds);
     req_bounds.extend(eqs);

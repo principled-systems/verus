@@ -7,6 +7,7 @@ use quote::ToTokens;
 use quote::format_ident;
 use quote::{quote, quote_spanned};
 use syn_verus::BroadcastUse;
+use syn_verus::DefaultEnsures;
 use syn_verus::ExprBlock;
 use syn_verus::ExprForLoop;
 use syn_verus::parse::{Parse, ParseStream};
@@ -27,14 +28,15 @@ use syn_verus::{
     FnArg, FnArgKind, FnMode, Global, Ident, ImplItem, ImplItemFn, Invariant, InvariantEnsures,
     InvariantExceptBreak, InvariantNameSet, InvariantNameSetList, InvariantNameSetSet, Item,
     ItemBroadcastGroup, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStatic, ItemStruct,
-    ItemTrait, ItemUnion, Lit, Local, MatchesOpExpr, MatchesOpToken, ModeSpec, ModeSpecChecked,
-    Pat, PatIdent, PatType, Path, Publish, Recommends, Requires, ReturnType, Returns, Signature,
-    SignatureDecreases, SignatureInvariants, SignatureSpec, SignatureSpecAttr, SignatureUnwind,
-    Stmt, Token, TraitItem, TraitItemFn, Type, TypeFnProof, TypeFnSpec, TypePath, UnOp, Visibility,
-    braced, bracketed, parenthesized, parse_macro_input,
+    ItemTrait, ItemUnion, Lit, Local, MatchesOpExpr, MatchesOpToken, Meta, MetaList, ModeSpec,
+    ModeSpecChecked, Pat, PatIdent, PatType, Path, Publish, Recommends, Requires, ReturnType,
+    Returns, Signature, SignatureDecreases, SignatureInvariants, SignatureSpec, SignatureSpecAttr,
+    SignatureUnwind, Stmt, Token, TraitItem, TraitItemFn, Type, TypeFnProof, TypeFnSpec, TypePath,
+    UnOp, Visibility, braced, bracketed, parenthesized, parse_macro_input,
 };
 
 const VERUS_SPEC: &str = "VERUS_SPEC__";
+const VERUS_UNERASED_PROXY: &str = "VERUS_UNERASED_PROXY__";
 
 fn take_expr(expr: &mut Expr) -> Expr {
     let dummy: Expr = Expr::Verbatim(TokenStream::new());
@@ -165,6 +167,16 @@ macro_rules! quote_spanned_builtin {
             let sp = $span;
             let $b = crate::syntax::Builtin(sp);
             ::quote::quote_spanned!{ sp => $($tt)* }
+        }
+    }
+}
+
+macro_rules! parse_quote_spanned_builtin {
+    ($b:ident, $span:expr => $($tt:tt)*) => {
+        {
+            let sp = $span;
+            let $b = crate::syntax::Builtin(sp);
+            ::syn_verus::parse_quote_spanned!{ sp => $($tt)* }
         }
     }
 }
@@ -427,7 +439,34 @@ fn rewrite_args_unwrap_ghost_tracked(erase_ghost: &EraseGhost, arg: &mut FnArg) 
     unwrap_ghost_tracked
 }
 
+fn merge_default_ensures(
+    ensures: Option<Ensures>,
+    default_ensures: Option<DefaultEnsures>,
+) -> Option<Ensures> {
+    let Some(default_ensures) = default_ensures else {
+        return ensures;
+    };
+    let DefaultEnsures { token, mut exprs } = default_ensures;
+    for expr in exprs.exprs.iter_mut() {
+        let span = expr.span();
+        *expr = parse_quote_spanned_builtin!(builtin, span => #builtin::default_ensures(#expr));
+    }
+    if let Some(mut ensures) = ensures {
+        for expr in exprs.exprs.into_iter() {
+            ensures.exprs.exprs.push(expr);
+        }
+        Some(ensures)
+    } else {
+        let token = Token![ensures](token.span());
+        Some(Ensures { attrs: vec![], token, exprs })
+    }
+}
+
 impl Visitor {
+    fn needs_unerased_proxies(&self) -> bool {
+        self.erase_ghost.keep() && !self.rustdoc
+    }
+
     fn take_ghost<T: Default>(&self, dest: &mut T) -> T {
         take_ghost(self.erase_ghost, dest)
     }
@@ -478,10 +517,13 @@ impl Visitor {
         let requires = self.take_ghost(&mut spec.requires);
         let recommends = self.take_ghost(&mut spec.recommends);
         let ensures = self.take_ghost(&mut spec.ensures);
+        let default_ensures = self.take_ghost(&mut spec.default_ensures);
         let returns = self.take_ghost(&mut spec.returns);
         let decreases = self.take_ghost(&mut spec.decreases);
         let opens_invariants = self.take_ghost(&mut spec.invariants);
         let unwind = self.take_ghost(&mut spec.unwind);
+
+        let ensures = merge_default_ensures(ensures, default_ensures);
 
         let mut spec_stmts = Vec::new();
         // TODO: wrap specs inside ghost blocks
@@ -785,6 +827,7 @@ impl Visitor {
             sig.mode,
             FnMode::Default | FnMode::Exec(_) | FnMode::Proof(_) | FnMode::ProofAxiom(_)
         ) && !matches!(sig.publish, Publish::Default)
+            && !is_encoded_const(attrs)
         {
             let publish_span = sig.publish.span();
             stmts.push(stmt_with_semi!(
@@ -932,16 +975,12 @@ impl Visitor {
         con_expr: &mut Option<Box<Expr>>,
         con_eq_token: &mut Option<Token![=]>,
         con_semi_token: &mut Option<Token![;]>,
-        con_ty: &Type,
+        _con_ty: &Type,
         con_span: Span,
     ) {
         if matches!(con_mode, FnMode::Spec(_) | FnMode::SpecChecked(_)) {
-            if let Some(mut expr) = con_expr.take() {
+            if let Some(expr) = con_expr.take() {
                 let mut stmts = Vec::new();
-                self.inside_ghost += 1;
-                self.visit_expr_mut(&mut expr);
-                self.inside_ghost -= 1;
-                stmts.push(Stmt::Expr(Expr::Verbatim(quote_spanned!(con_span => #[allow(non_snake_case)]#[verus::internal(verus_macro)] #[verus::internal(const_body)] fn __VERUS_CONST_BODY__() -> #con_ty { #expr } )), None));
                 stmts.push(Stmt::Expr(
                     Expr::Verbatim(quote_spanned!(con_span => unsafe { core::mem::zeroed() })),
                     None,
@@ -1362,6 +1401,8 @@ impl Visitor {
     }
 
     fn visit_items_prefilter(&mut self, items: &mut Vec<Item>) {
+        self.visit_items_make_unerased_proxies(items);
+
         if self.erase_ghost.erase_all() {
             // Erase ghost functions and constants
             items.retain(|item| match item {
@@ -1619,6 +1660,7 @@ impl Visitor {
             output,
             requires,
             ensures,
+            default_ensures,
             returns,
             invariants,
             unwind,
@@ -1646,6 +1688,7 @@ impl Visitor {
                 requires: requires,
                 recommends: None,
                 ensures: ensures,
+                default_ensures,
                 returns: returns,
                 decreases: None,
                 invariants: invariants,
@@ -1795,6 +1838,160 @@ impl Visitor {
             }
             i += 1;
         }
+    }
+
+    fn item_needs_unerased_proxy(&self, item: &Item) -> bool {
+        match item {
+            Item::Const(item_const) => !is_external(&item_const.attrs),
+            Item::Fn(item_fn) => item_fn.sig.constness.is_some() && !is_external(&item_fn.attrs),
+            _ => false,
+        }
+    }
+
+    fn item_translate_const_to_0_arg_fn(&self, item: Item) -> Item {
+        match item {
+            Item::Const(item_const) => {
+                let span = item_const.span();
+                let ItemConst {
+                    mut attrs,
+                    vis,
+                    const_token,
+                    ident,
+                    generics,
+                    colon_token,
+                    ty,
+                    eq_token: _,
+                    expr,
+                    semi_token: _,
+                    publish,
+                    mode,
+                    ensures,
+                    block,
+                } = item_const;
+                attrs.push(mk_verus_attr(span, quote! { encoded_const }));
+
+                let publish = match (publish, &mode, &vis) {
+                    (publish, _, Visibility::Inherited) => publish,
+                    (
+                        Publish::Default,
+                        FnMode::Spec(_) | FnMode::SpecChecked(_) | FnMode::Default,
+                        _,
+                    ) => Publish::Open(syn_verus::Open { token: token::Open { span } }),
+                    (publish, _, _) => publish,
+                };
+
+                Item::Fn(ItemFn {
+                    attrs,
+                    vis,
+                    sig: Signature {
+                        spec: SignatureSpec {
+                            prover: None,
+                            requires: None,
+                            recommends: None,
+                            ensures,
+                            default_ensures: None,
+                            returns: None,
+                            decreases: None,
+                            invariants: None,
+                            unwind: None,
+                            with: None,
+                        },
+                        publish,
+                        constness: None,
+                        asyncness: None,
+                        unsafety: None,
+                        abi: None,
+                        broadcast: None,
+                        mode: mode,
+                        fn_token: token::Fn { span: const_token.span },
+                        ident: ident.clone(),
+                        generics,
+                        paren_token: Paren { span: into_spans(colon_token.span) },
+                        inputs: Punctuated::new(),
+                        variadic: None,
+                        output: ReturnType::Type(
+                            token::RArrow { spans: [colon_token.span, colon_token.span] },
+                            None,
+                            None, /*
+                                  Some(Box::new((
+                                      Paren { span: into_spans(colon_token.span) },
+                                      Pat::Verbatim(quote!{ #ident }),
+                                      colon_token,
+                                  ))), */
+                            ty,
+                        ),
+                    },
+                    block: (match block {
+                        Some(block) => block,
+                        _ => {
+                            let expr = expr.unwrap();
+                            Box::new(Block {
+                                brace_token: Brace { span: into_spans(expr.span()) },
+                                stmts: vec![Stmt::Expr(*expr, None)],
+                            })
+                        }
+                    }),
+                    semi_token: None,
+                })
+            }
+            item => item,
+        }
+    }
+
+    fn item_make_proxy(&self, item: Item) -> Item {
+        let mut item = item;
+        item = self.item_translate_const_to_0_arg_fn(item);
+        match &mut item {
+            Item::Fn(item_fn) => {
+                item_fn.sig.ident = Ident::new(
+                    &format!("{}{}", VERUS_UNERASED_PROXY, &item_fn.sig.ident),
+                    item_fn.sig.span(),
+                );
+                item_fn.attrs.push(mk_verus_attr(item_fn.span(), quote! { unerased_proxy }));
+            }
+            _ => unreachable!(),
+        }
+        item
+    }
+
+    fn item_make_external_and_erased(&mut self, item: Item) -> Item {
+        let mut item = item;
+
+        self.erase_ghost = EraseGhost::Erase;
+        self.visit_item_mut(&mut item);
+        self.erase_ghost = EraseGhost::Keep;
+
+        let span = item.span();
+        let attributes = match &mut item {
+            Item::Fn(item_fn) => &mut item_fn.attrs,
+            Item::Const(item_const) => &mut item_const.attrs,
+            _ => unreachable!(),
+        };
+        attributes.push(mk_verifier_attr(span, quote! { external }));
+        attributes.push(mk_verus_attr(span, quote! { uses_unerased_proxy }));
+
+        item
+    }
+
+    fn visit_items_make_unerased_proxies(&mut self, items: &mut Vec<Item>) {
+        if !self.needs_unerased_proxies() {
+            return;
+        }
+
+        let mut new_items = vec![];
+
+        for item in std::mem::take(items).into_iter() {
+            if self.item_needs_unerased_proxy(&item) {
+                let proxy = self.item_make_proxy(item.clone());
+                let erased = self.item_make_external_and_erased(item);
+                new_items.push(proxy);
+                new_items.push(erased);
+            } else {
+                new_items.push(item);
+            }
+        }
+
+        *items = new_items;
     }
 
     fn visit_impl_items_prefilter(&mut self, items: &mut Vec<ImplItem>, for_trait: bool) {
@@ -2908,8 +3105,8 @@ impl Visitor {
             }
         } else if let Expr::Unary(unary) = expr {
             let span = unary.span();
-            match (is_inside_ghost, mode_block, &*unary.expr) {
-                (false, (false, _), Expr::Block(..)) => {
+            match (mode_block, &*unary.expr) {
+                ((false, _), Expr::Block(..)) => {
                     // proof { ... }
                     let mut inner = take_expr(&mut *unary.expr);
                     if self.inside_const {
@@ -2917,12 +3114,12 @@ impl Visitor {
                             quote_spanned!(span => {#[verus::internal(const_header_wrapper)] ||/* vattr */{#inner};}),
                         );
                     }
-                    *expr = self.maybe_erase_expr(
-                        span,
-                        Expr::Verbatim(
-                            quote_spanned!(span => #[verifier::proof_block] /* vattr */ #inner),
-                        ),
-                    );
+                    let e = if is_inside_ghost {
+                        quote_spanned!(span => #[verifier::proof_in_spec] /* vattr */ #inner)
+                    } else {
+                        quote_spanned!(span => #[verifier::proof_block] /* vattr */ #inner)
+                    };
+                    *expr = self.maybe_erase_expr(span, Expr::Verbatim(e));
                 }
                 _ => {
                     *expr = Expr::Verbatim(
@@ -3163,7 +3360,9 @@ impl Visitor {
         // into:
         //  {
         //      #[allow(non_snake_case)]
-        //      let VERUS_loop_result = match ::core::iter::IntoIterator::into_iter(e) {
+        //      let VERUS_iter = e;
+        //      #[allow(non_snake_case)]
+        //      let VERUS_loop_result = match ::core::iter::IntoIterator::into_iter(VERUS_iter) {
         //          #[allow(non_snake_case)]
         //          mut VERUS_exec_iter => {
         //              #[allow(non_snake_case)]
@@ -3176,7 +3375,10 @@ impl Visitor {
         //                      ::vstd::pervasive::ForLoopGhostIterator::ghost_invariant(&y,
         //                          builtin::infer_spec_for_loop_iter(
         //                              &::vstd::pervasive::ForLoopGhostIteratorNew::ghost_iter(
-        //                                  &::core::iter::IntoIterator::into_iter(e)))),
+        //                                  &::core::iter::IntoIterator::into_iter(VERUS_iter)),
+        //                              &::vstd::pervasive::ForLoopGhostIteratorNew::ghost_iter(
+        //                                  &::core::iter::IntoIterator::into_iter(e)),
+        //                          )),
         //                      { let x =
         //                          ::vstd::pervasive::ForLoopGhostIterator::ghost_peek_next(&y)
         //                          .unwrap_or(vstd::pervasive::arbitrary());
@@ -3286,7 +3488,10 @@ impl Visitor {
         //              ::vstd::pervasive::ForLoopGhostIterator::ghost_invariant(&y,
         //                  builtin::infer_spec_for_loop_iter(
         //                      &::vstd::pervasive::ForLoopGhostIteratorNew::ghost_iter(
-        //                          &::core::iter::IntoIterator::into_iter(e)))),
+        //                          &::core::iter::IntoIterator::into_iter(VERUS_iter)),
+        //                      &::vstd::pervasive::ForLoopGhostIteratorNew::ghost_iter(
+        //                          &::core::iter::IntoIterator::into_iter(e)),
+        //                  )),
         let exec_inv: Expr = Expr::Verbatim(quote_spanned_vstd!(vstd, expr.span() =>
             #[verifier::custom_err(#exec_inv_msg)]
             #vstd::pervasive::ForLoopGhostIterator::exec_invariant(&#x_ghost_iter, &#x_exec_iter)
@@ -3295,6 +3500,8 @@ impl Visitor {
             #[verifier::custom_err(#ghost_inv_msg)]
             #vstd::pervasive::ForLoopGhostIterator::ghost_invariant(&#x_ghost_iter,
                 builtin::infer_spec_for_loop_iter(
+                    &#vstd::pervasive::ForLoopGhostIteratorNew::ghost_iter(
+                        &::core::iter::IntoIterator::into_iter(VERUS_iter)),
                     &#vstd::pervasive::ForLoopGhostIteratorNew::ghost_iter(
                         &::core::iter::IntoIterator::into_iter(#expr_inv)),
                     #print_hint,
@@ -3398,7 +3605,9 @@ impl Visitor {
         };
         Expr::Verbatim(quote_spanned!(span => {
             #[allow(non_snake_case)]
-            let VERUS_loop_result = match ::core::iter::IntoIterator::into_iter(#expr) {
+            let VERUS_iter = #expr;
+            #[allow(non_snake_case)]
+            let VERUS_loop_result = match ::core::iter::IntoIterator::into_iter(VERUS_iter) {
                 #[allow(non_snake_case)]
                 mut #x_exec_iter => #full_loop
             };
@@ -4755,7 +4964,7 @@ pub(crate) fn rejoin_tokens(stream: proc_macro::TokenStream) -> proc_macro::Toke
     let adjacent = |s1: Span, s2: Span| {
         let l1 = s1.end();
         let l2 = s2.start();
-        s1.source_file() == s2.source_file() && l1.eq(&l2)
+        s1.source().file() == s2.source().file() && l1.eq(&l2)
     };
     fn mk_joint_punct(t: Option<(char, proc_macro::Spacing, Span)>) -> TokenTree {
         let (op, _, span) = t.unwrap();
@@ -4997,6 +5206,36 @@ pub(crate) fn has_external_code(attrs: &Vec<Attribute>) -> bool {
     })
 }
 
+pub(crate) fn is_encoded_const(attrs: &Vec<Attribute>) -> bool {
+    attrs.iter().any(|attr| match &attr.meta {
+        Meta::List(MetaList { path, delimiter: _, tokens }) => {
+            path.segments.len() == 2
+                && path.segments[0].ident.to_string() == "verus"
+                && path.segments[1].ident.to_string() == "internal"
+                && tokens.to_string() == "encoded_const"
+        }
+        _ => false,
+    })
+}
+
+pub(crate) fn is_external(attrs: &Vec<Attribute>) -> bool {
+    attrs.iter().any(|attr| {
+        // verifier::external
+        attr.path().segments.len() == 2
+            && attr.path().segments[0].ident.to_string() == "verifier"
+            && attr.path().segments[1].ident.to_string() == "external"
+        // verifier(external)
+        || attr.path().segments.len() == 1
+            && attr.path().segments[0].ident.to_string() == "verifier"
+            && match &attr.meta {
+                syn_verus::Meta::List(list) => {
+                    matches!(list.tokens.to_string().as_str(), "external")
+                }
+                _ => false,
+            }
+    })
+}
+
 /// Constructs #[name(tokens)]
 macro_rules! declare_mk_rust_attr {
     ($name:ident, $s:ident) => {
@@ -5032,7 +5271,7 @@ declare_mk_rust_attr!(mk_rust_attr_syn, syn);
 
 /// Constructs #[verus::internal(tokens)]
 macro_rules! declare_mk_verus_attr {
-    ($name:ident, $s:ident) => {
+    ($name:ident, $name2:ident, $s:ident) => {
         pub(crate) fn $name(span: Span, tokens: TokenStream) -> $s::Attribute {
             let mut path_segments = $s::punctuated::Punctuated::new();
             path_segments.push($s::PathSegment {
@@ -5062,10 +5301,37 @@ macro_rules! declare_mk_verus_attr {
                 meta,
             }
         }
+
+        #[allow(dead_code)]
+        pub(crate) fn $name2(span: Span, tokens: TokenStream) -> $s::Attribute {
+            let mut path_segments = $s::punctuated::Punctuated::new();
+            path_segments.push($s::PathSegment {
+                ident: $s::Ident::new("verifier", span),
+                arguments: $s::PathArguments::None,
+            });
+            let path = $s::Path { leading_colon: None, segments: path_segments };
+            let meta = if tokens.is_empty() {
+                $s::Meta::Path(path)
+            } else {
+                $s::Meta::List($s::MetaList {
+                    path,
+                    delimiter: $s::MacroDelimiter::Paren($s::token::Paren {
+                        span: into_spans(span),
+                    }),
+                    tokens: quote! { #tokens },
+                })
+            };
+            $s::Attribute {
+                pound_token: $s::token::Pound { spans: [span] },
+                style: $s::AttrStyle::Outer,
+                bracket_token: $s::token::Bracket { span: into_spans(span) },
+                meta,
+            }
+        }
     };
 }
-declare_mk_verus_attr!(mk_verus_attr, syn_verus);
-declare_mk_verus_attr!(mk_verus_attr_syn, syn);
+declare_mk_verus_attr!(mk_verus_attr, mk_verifier_attr, syn_verus);
+declare_mk_verus_attr!(mk_verus_attr_syn, mk_verifier_attr_syn, syn);
 
 fn is_ptr_type(typ: &Type) -> bool {
     match typ {
