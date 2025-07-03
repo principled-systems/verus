@@ -54,6 +54,7 @@ pub(crate) enum TypX {
         name: Id,
         assoc_typ_args: Vec<Id>,
     },
+    PointeeMetadata(Typ),
     Closure,
     FnDef,
     RawPtr(Typ, rustc_middle::ty::Mutability),
@@ -149,6 +150,7 @@ pub(crate) enum Bound {
     Id(Id),
     Trait { trait_path: Id, args: Vec<Typ>, equality: Option<(Id, Vec<Id>, Typ)> },
     Fn(ClosureKind, Typ, Typ),
+    ProofFn(ClosureKind),
 }
 
 // where typ: bound
