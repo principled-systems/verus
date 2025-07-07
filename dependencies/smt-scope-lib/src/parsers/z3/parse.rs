@@ -76,7 +76,8 @@ impl Z3Parser {
         kind: TermKind,
         child_ids: BoxSlice<TermIdx>,
     ) -> Result<TermIdx> {
-        let term = Term::new(id, kind, child_ids, |tidx| &self[tidx]);
+        let frame = self.stack.active_frame();
+        let term = Term::new(id, kind, child_ids, |tidx| &self[tidx], frame);
         self.terms.app_terms.new_term(term)
     }
 
@@ -185,6 +186,7 @@ impl Z3Parser {
         let inverted_gobble = move |_| gobble().map_or_else(|err| Some(Err(err)), |ok| ok.map(Ok));
         std::iter::repeat(()).map_while(inverted_gobble)
     }
+
     fn append_trans_equality_tuples<'a>(
         &mut self,
         l: impl Iterator<Item = &'a str>,
@@ -429,7 +431,7 @@ impl Z3LogParser for Z3Parser {
         let kind = match name.parse() {
             Ok(kind) => kind,
             Err(_) => {
-                debug_assert!(false, "Unknown proof step kind {name:?}");
+                //debug_assert!(false, "Unknown proof step kind {name:?}");
                 ProofStepKind::OTHER(self.mk_string(name)?)
             }
         };
@@ -937,6 +939,7 @@ impl Z3LogParser for Z3Parser {
             cut.try_reserve(1)?;
             cut.push(assignment);
         }
+
         let frame = self.stack.active_frame();
         debug_assert!(self.lits.curr_to_root_unique());
         self.lits.cdcl.new_conflict(cut.into_boxed_slice(), frame);

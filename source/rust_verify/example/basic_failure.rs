@@ -10,15 +10,15 @@ verus! {
     {
         0
     }
-    
+
     fn fail_a_post_stmt(r: &mut u64)
         ensures *r == 1
     {
         *r = 0;
     }
-    
+
     proof fn external_span(s: Seq<nat>) {
+        here>();
         assert(s[0] == 0);
     }
-
 }

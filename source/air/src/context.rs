@@ -18,6 +18,7 @@ use std::any::Any;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
+use tempfile::NamedTempFile;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AssertionInfo {
@@ -108,6 +109,7 @@ pub struct Context {
     pub(crate) air_final_log: Emitter,
     pub(crate) smt_log: Emitter,
     pub(crate) smt_transcript_log: Option<Box<dyn std::io::Write>>,
+    pub(crate) smt_proof_log_path: Option<tempfile::TempPath>,
     pub(crate) time_smt_init: Duration,
     pub(crate) time_smt_run: Duration,
     pub(crate) rlimit_count: Option<u64>,
@@ -172,6 +174,13 @@ impl Context {
             ),
             smt_log: Emitter::new(message_interface.clone(), true, true, None, solver.clone()),
             smt_transcript_log: None,
+            smt_proof_log_path: tempfile::Builder::new()
+                .prefix("air-proof-log-")
+                .rand_bytes(12)
+                .suffix(".smt2")
+                .tempfile()
+                .ok()
+                .map(NamedTempFile::into_temp_path),
             time_smt_init: Duration::new(0, 0),
             time_smt_run: Duration::new(0, 0),
             rlimit_count: match solver {
@@ -186,6 +195,7 @@ impl Context {
             check_valid_used: false,
             solver,
         };
+
         context.axiom_infos.push_scope(false);
         context.array_map.push_scope(false);
         context.lambda_map.push_scope(false);
@@ -320,6 +330,14 @@ impl Context {
                     self.set_z3_param_bool("smt.arith.nl", false, true);
                     self.set_z3_param_bool("pi.enabled", false, true);
                     self.set_z3_param_bool("rewriter.sort_disjunctions", false, true);
+                    self.set_z3_param_bool("produce-proofs", true, true);
+                    self.set_z3_param_bool("proof", true, true);
+
+                    let path = self.smt_proof_log_path.as_ref();
+                    let owned = path.map(|s| s.to_str().unwrap().to_owned());
+                    if let Some(path) = owned {
+                        self.set_z3_param_str("solver.proof.log", &path, true);
+                    }
                 }
                 SmtSolver::Cvc5 => {
                     self.smt_log.log_node(&node!((set-logic {str_to_node("ALL")})));

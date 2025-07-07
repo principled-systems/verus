@@ -88,13 +88,19 @@ impl Bucket {
 pub fn get_buckets(
     krate: &Krate,
     modules_to_verify: &Vec<vir::ast::Module>,
+    here_marker: &Option<vir::check_here::HereMarker>,
 ) -> Vec<(BucketId, Bucket)> {
     let mut map: HashMap<BucketId, Vec<Fun>> = HashMap::new();
     let module_set: HashSet<&Path> = modules_to_verify.iter().map(|m| &m.x.path).collect();
     for func in &krate.functions {
         if let Some(owning_module) = &func.x.owning_module {
             if module_set.contains(owning_module) {
-                let bucket_id = if func.x.attrs.spinoff_prover {
+                let spinoff = func.x.attrs.spinoff_prover
+                    || here_marker
+                        .as_ref()
+                        .is_some_and(|marker| marker.function.x.name == func.x.name);
+
+                let bucket_id = if spinoff {
                     BucketId::Fun(owning_module.clone(), func.x.name.clone())
                 } else {
                     BucketId::Module(owning_module.clone())

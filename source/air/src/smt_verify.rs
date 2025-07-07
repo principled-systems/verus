@@ -1,3 +1,5 @@
+use sise::{Node, Writer};
+
 use crate::ast::{
     Axiom, BinaryOp, BindX, Decl, DeclX, Expr, ExprX, Ident, MultiOp, Quant, Query, StmtX, TypX,
     UnaryOp,
@@ -7,6 +9,7 @@ use crate::context::{AssertionInfo, AxiomInfo, Context, ContextState, SmtSolver,
 use crate::def::{GLOBAL_PREFIX_LABEL, PREFIX_LABEL};
 use crate::messages::{ArcDynMessage, Diagnostics};
 pub use crate::model::{Model, ModelDef};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -236,6 +239,17 @@ pub(crate) fn smt_check_assertion<'ctx>(
     };
     context.time_smt_run += smt_run_start_time.elapsed();
 
+    // if let Some(path) = &context.smt_proof_log_path {
+    //     use std::sync::atomic::{AtomicU64, Ordering};
+    //     let text = std::fs::read_to_string(path).unwrap();
+
+    //     static COUNTER: AtomicU64 = AtomicU64::new(0);
+    //     let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+    //     std::fs::write(format!("proof-log{count}.smt2"), &text).unwrap();
+
+    //     process_proof_log(&text, count);
+    // }
+
     #[derive(PartialEq, Eq)]
     enum SmtOutput {
         Unsat,
@@ -369,6 +383,140 @@ pub(crate) fn smt_check_assertion<'ctx>(
     }
 }
 
+// #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+// struct OrdNode(sise::Node);
+
+// impl std::cmp::PartialOrd for OrdNode {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         Some(self.cmp(other))
+//     }
+// }
+
+// impl std::cmp::Ord for OrdNode {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         fn recurse(a: &Node, b: &Node) -> std::cmp::Ordering {
+//             match (a, b) {
+//                 (Node::Atom(a), Node::Atom(b)) => a.cmp(b),
+//                 (Node::List(a), Node::List(b)) => std::iter::zip(a, b)
+//                     .map(|(a, b)| recurse(a, b)).chain(Some(
+//                         a.len().cmp(&b.len()),
+//                     ))
+//                     .fold(std::cmp::Ordering::Equal, std::cmp::Ordering::then),
+//                 (Node::Atom(_), Node::List(_)) => std::cmp::Ordering::Less,
+//                 (Node::List(_), Node::Atom(_)) => std::cmp::Ordering::Greater,
+//             }
+//         }
+
+//         recurse(&self.0, &other.0)
+//     }
+// }
+
+#[allow(dead_code)]
+fn expand_recursive(map: &HashMap<String, (String, Node)>, node: &mut Node) {
+    match node {
+        Node::Atom(ref key) => {
+            if let Some((_ty, body)) = map.get(key) {
+                *node = body.clone();
+                expand_recursive(map, node);
+            }
+        }
+        Node::List(nodes) => {
+            for node in nodes {
+                expand_recursive(map, node);
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn process_proof_log(text: &str, count: u64) {
+    use sise::Node::*;
+
+    let mut def_map = HashMap::<String, (String, Node)>::new();
+    let mut inferred = Vec::<Node>::new();
+    let mut assumed = Vec::<Node>::new();
+    let mut deleted = Vec::<Node>::new();
+    let mut insts = Vec::<Node>::new();
+
+    let mut lines = text.lines().peekable();
+    loop {
+        let Some(line) = lines.next() else { break };
+        let mut curr = Cow::Borrowed(line);
+
+        while let Some(line) = lines.next_if(|s| s.starts_with(char::is_whitespace)) {
+            let owned = curr.to_mut();
+            owned.push(' ');
+            owned.push_str(line.trim_start());
+        }
+
+        let mut parser = sise::Parser::new(curr.as_bytes());
+        let item = sise::read_into_tree(&mut parser).unwrap();
+
+        let list = item.into_list().unwrap();
+        match list.as_slice() {
+            [Atom(inst), Atom(name), Atom(ty), body]
+                if inst == "define-const" && name.starts_with('$') =>
+            {
+                def_map.insert(name.to_owned(), (ty.to_owned(), body.clone()));
+
+                if let [Atom(head), tail @ ..] = body.as_list().unwrap().as_slice() {
+                    if ty == "Proof" && head.contains("inst") {
+                        insts.extend(tail.iter().cloned());
+                    }
+                }
+            }
+
+            [Atom(inst), term, _just] if inst == "infer" => {
+                inferred.push(term.clone());
+            }
+
+            [Atom(inst), terms @ .., _just] if inst == "infer" => {
+                let mut list = Vec::with_capacity(terms.len() + 1);
+                list.push(Atom("or".to_string()));
+                list.extend(terms.iter().cloned());
+                inferred.push(Node::List(list));
+            }
+
+            [Atom(inst), clauses @ ..] if inst == "assume" => {
+                assumed.extend(clauses.iter().cloned());
+            }
+
+            [Atom(inst), clauses @ ..] if inst.starts_with("del") => {
+                deleted.extend(clauses.iter().cloned());
+            }
+
+            _ => {}
+        }
+    }
+
+    let mut output = String::new();
+
+    for (title, list) in [
+        (";; quantifier instantiations\n", insts),
+        (";; assumed clauses\n", assumed),
+        (";; deleted clauses\n", deleted),
+        (";; inferred clauses\n", inferred),
+    ] {
+        output.push_str(title);
+
+        for mut clause in list {
+            expand_recursive(&def_map, &mut clause);
+
+            let mut string = String::new();
+            let mut writer = sise::CompactStringWriter::new(&mut string);
+            sise::write_from_tree(&mut writer, &clause).unwrap();
+            writer.finish(()).unwrap();
+
+            output.push_str(&string);
+            output.push_str("\n");
+        }
+
+        output.push_str("\n");
+    }
+
+    std::fs::write(format!("expand-proof-log{count}.smt2"), &output).unwrap();
+}
+
 pub(crate) fn smt_update_statistics(context: &mut Context) -> Result<(), ValidityResult> {
     assert!(matches!(context.solver, SmtSolver::Z3)); // the CVC5 output format for statistics is different
 
@@ -424,7 +572,7 @@ fn smt_get_model(
 
     if smt_output.iter().any(|line| line.contains("model is not available")) {
         // when we don't use incremental solving, sometime the model is not available when the z3 result is unknown
-        let here_focus = infos.iter().find_map(|info| info.here_focus.clone());
+        let here_focus = infos.iter().find_map(|info| info.here_focus.as_ref()).cloned();
         context.state = ContextState::FoundInvalid(infos, None);
         return ValidityResult::Invalid(None, None, None, here_focus);
     };

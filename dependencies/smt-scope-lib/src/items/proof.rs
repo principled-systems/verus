@@ -529,6 +529,11 @@ pub enum ProofStepKind {
     /// of literal positions from the main clause and side clause.
     PR_HYPER_RESOLVE,
 
+    PR_SMT,
+    PR_ASSUMPTION,
+    PR_DEL,
+    PR_RUP,
+
     /// Unrecognised proof step was encountered.
     OTHER(IString),
 }

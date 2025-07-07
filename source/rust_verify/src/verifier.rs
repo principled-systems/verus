@@ -385,6 +385,7 @@ struct RunCommandQueriesResult {
     not_skipped: bool,
     #[cfg(feature = "axiom-usage-info")]
     used_axioms: Option<Vec<air::ast::Ident>>,
+    here_marker: Option<vir::check_here::HereMarker>,
 }
 
 impl std::ops::Add for RunCommandQueriesResult {
@@ -402,6 +403,7 @@ impl std::ops::Add for RunCommandQueriesResult {
                 (None, None) => None,
                 (Some(_), Some(_)) => panic!("only the primary query should contain used_axioms"),
             },
+            here_marker: self.here_marker.or(rhs.here_marker),
         }
     }
 }
@@ -817,6 +819,7 @@ impl Verifier {
         let mut timed_out = false;
         #[cfg(feature = "axiom-usage-info")]
         let mut used_axioms = None;
+
         loop {
             match result {
                 #[cfg(not(feature = "axiom-usage-info"))]
@@ -1004,6 +1007,7 @@ impl Verifier {
             invalidity,
             timed_out,
             not_skipped: matches!(**command, CommandX::CheckValid(_)),
+            here_marker: None,
         }
     }
 
@@ -1063,6 +1067,7 @@ impl Verifier {
                 not_skipped: false,
                 #[cfg(feature = "axiom-usage-info")]
                 used_axioms: None,
+                here_marker: None,
             };
         }
 
@@ -1072,6 +1077,7 @@ impl Verifier {
             not_skipped: false,
             #[cfg(feature = "axiom-usage-info")]
             used_axioms: None,
+            here_marker: None,
         };
         let CommandsWithContextX {
             context,
@@ -1345,19 +1351,54 @@ impl Verifier {
 
         assert!(!(self.args.profile && self.args.profile_all));
         assert!(!(self.args.profile && self.args.capture_profiles));
-        let profile_all_file_name = if self.args.profile_all || self.args.capture_profiles {
-            let solver_log_dir = self.ensure_solver_log_dir()?;
-            let profile_file_name = self.log_file_name(
+
+        fn init_trace_log_all_file_name(
+            this: &mut Verifier,
+            bucket_id: &BucketId,
+            file_name: &mut Option<std::path::PathBuf>,
+        ) -> Result<(), Arc<MessageX>> {
+            if file_name.is_some() {
+                return Ok(());
+            }
+
+            let solver_log_dir = this.ensure_solver_log_dir()?;
+            let profile_file_name = this.log_file_name(
                 &solver_log_dir,
                 Some(bucket_id),
-                Self::log_fine_name_suffix(false, None, false, crate::config::PROFILE_FILE_SUFFIX)
-                    .as_str(),
+                Verifier::log_fine_name_suffix(
+                    false,
+                    None,
+                    false,
+                    crate::config::PROFILE_FILE_SUFFIX,
+                )
+                .as_str(),
             );
             assert!(!profile_file_name.exists());
-            Some(profile_file_name)
+            *file_name = Some(profile_file_name);
+            Ok(())
+        }
+
+        let mut trace_log_all_file_name = None;
+
+        let is_here_spinoff = bucket_id
+            .function()
+            .zip(self.here_marker.as_ref())
+            .is_some_and(|(fun, marker)| fun == &marker.function.x.name);
+
+        let trace_all_file_name = if is_here_spinoff {
+            init_trace_log_all_file_name(self, &bucket_id, &mut trace_log_all_file_name)?;
+            trace_log_all_file_name.clone()
         } else {
             None
         };
+
+        let profile_all_file_name = if self.args.profile_all || self.args.capture_profiles {
+            init_trace_log_all_file_name(self, &bucket_id, &mut trace_log_all_file_name)?;
+            trace_log_all_file_name.clone()
+        } else {
+            None
+        };
+
         let mut air_context = self.new_air_context_with_prelude(
             message_interface.clone(),
             reporter,
@@ -1365,7 +1406,7 @@ impl Verifier {
             None,
             false,
             PreludeConfig { arch_word_bits: ctx.arch_word_bits, solver: self.args.solver },
-            profile_all_file_name.as_ref(),
+            trace_log_all_file_name.as_ref(),
         )?;
         if self.args.solver_version_check {
             air_context.set_expected_solver_version(match self.args.solver {
@@ -1556,6 +1597,9 @@ impl Verifier {
                                     "Found singular command when Verus is compiled without Singular feature"
                                 );
                             }
+
+                            //dbg!(&cmds);
+
                             let mut spinoff_z3_context;
                             let do_spinoff = (cmds.prover_choice
                                 == vir::def::ProverChoice::Nonlinear)
@@ -1563,24 +1607,64 @@ impl Verifier {
                                 || *profile_rerun
                                 || self.args.spinoff_all;
 
-                            let profile_file_name = if *profile_rerun
-                                || ((self.args.profile_all || self.args.capture_profiles)
-                                    && do_spinoff)
-                            {
-                                let solver_log_dir = self.ensure_solver_log_dir()?;
-                                let profile_file_name = self.log_file_name(
+                            fn init_trace_log_file_name(
+                                trace_log_file_name: &mut Option<std::path::PathBuf>,
+                                bucket_id: &BucketId,
+                                is_recommend: &bool,
+                                spinoff_context_counter: &usize,
+                                this: &mut Verifier,
+                                function: &Arc<vir::def::Spanned<vir::sst::FunctionSstX>>,
+                            ) -> Result<(), Arc<MessageX>> {
+                                if trace_log_file_name.is_some() {
+                                    return Ok(());
+                                }
+
+                                let solver_log_dir = this.ensure_solver_log_dir()?;
+                                let profile_file_name = this.log_file_name(
                                     &solver_log_dir,
                                     Some(bucket_id),
-                                    Self::log_fine_name_suffix(
-                                        is_recommend,
-                                        Some((&(function.x.name).path, spinoff_context_counter)),
-                                        self.expand_flag,
+                                    Verifier::log_fine_name_suffix(
+                                        *is_recommend,
+                                        Some((&function.x.name.path, *spinoff_context_counter)),
+                                        this.expand_flag,
                                         crate::config::PROFILE_FILE_SUFFIX,
                                     )
                                     .as_str(),
                                 );
                                 assert!(!profile_file_name.exists());
-                                Some(profile_file_name)
+                                *trace_log_file_name = Some(profile_file_name);
+                                Ok(())
+                            }
+
+                            let mut trace_log_file_name = None;
+
+                            let profile_file_name = if *profile_rerun
+                                || ((self.args.profile_all || self.args.capture_profiles)
+                                    && do_spinoff)
+                            {
+                                init_trace_log_file_name(
+                                    &mut trace_log_file_name,
+                                    &bucket_id,
+                                    &is_recommend,
+                                    &spinoff_context_counter,
+                                    self,
+                                    function,
+                                )?;
+                                trace_log_file_name.clone()
+                            } else {
+                                None
+                            };
+
+                            let trace_file_name = if is_here_spinoff {
+                                init_trace_log_file_name(
+                                    &mut trace_log_file_name,
+                                    &bucket_id,
+                                    &is_recommend,
+                                    &spinoff_context_counter,
+                                    self,
+                                    function,
+                                )?;
+                                trace_log_file_name.clone()
                             } else {
                                 None
                             };
@@ -1612,7 +1696,7 @@ impl Verifier {
                                     is_recommend,
                                     spinoff_context_counter,
                                     &cmds.context.span,
-                                    profile_file_name.as_ref(),
+                                    trace_log_file_name.as_ref(),
                                     spinoff_reason,
                                 )?;
                                 // for bitvector, only one query, no push/pop
@@ -1635,6 +1719,7 @@ impl Verifier {
                                 not_skipped: command_not_skipped,
                                 #[cfg(feature = "axiom-usage-info")]
                                     used_axioms: command_used_axioms,
+                                ..
                             } = self.run_commands_queries(
                                 reporter,
                                 source_map,
@@ -1710,6 +1795,15 @@ impl Verifier {
                                     );
                                     reporter
                                         .report(&vir::messages::note(&function.span, msg).to_any());
+                                }
+                            }
+
+                            if let Some(file_name) = trace_file_name {
+                                if file_name.exists() {
+                                    eprintln!("Trace analysis entry point 1 (inner)");
+                                    let path = file_name.to_str().unwrap();
+                                    air::tracer::TraceAnalyser::from_path(path, &cmds.commands)
+                                        .unwrap();
                                 }
                             }
 
@@ -1881,6 +1975,15 @@ impl Verifier {
                 }
             }
         }
+
+        if let Some(file_name) = trace_all_file_name {
+            if file_name.exists() {
+                eprintln!("Trace analysis entry point 2 (outer)");
+                let path = file_name.to_str().unwrap();
+                air::tracer::TraceAnalyser::from_path(path, &Default::default()).unwrap();
+            }
+        }
+
         // if spinning off all, the regular profile loop inside has already profiled everything
         if let (Some(profile_all_file_name), false) = (profile_all_file_name, self.args.spinoff_all)
         {
@@ -2137,7 +2240,7 @@ impl Verifier {
                 .expect("current_crate_module_ids should be initialized");
             user_filter.filter_modules(current_crate_module_ids)?
         };
-        let buckets = crate::buckets::get_buckets(&krate, &modules_to_verify);
+        let buckets = crate::buckets::get_buckets(&krate, &modules_to_verify, &self.here_marker);
         let buckets = user_filter.filter_buckets(buckets);
         let bucket_ids: Vec<BucketId> = buckets.iter().map(|p| p.0.clone()).collect();
         self.buckets = buckets.into_iter().collect();

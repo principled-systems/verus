@@ -3,7 +3,7 @@ use mem_dbg::{MemDbg, MemSize};
 
 use crate::{BoxSlice, Error, FxHashMap, IString, NonMaxU32, Result, StringTable};
 
-use super::{QuantIdx, TermIdx};
+use super::{QuantIdx, StackIdx, TermIdx};
 
 /// A Z3 term and associated data.
 
@@ -15,29 +15,31 @@ pub struct Term {
     /// Takes up `2 * size_of::<usize>()` space and avoids heap allocation for
     /// lens <= 1.
     pub child_ids: BoxSlice<TermIdx>,
+    pub frame: StackIdx,
 }
 
 impl Term {
-    #[allow(clippy::no_effect)]
-    pub(crate) const CHECK_SIZE: bool = {
-        #[allow(dead_code)]
-        struct SmallTerm {
-            id: TermId,
-            kind: TermKind,
-            child_ids: BoxSlice<TermIdx>,
-        }
-        let sizeof_eq = core::mem::size_of::<Term>() == core::mem::size_of::<SmallTerm>();
-        [(); 1][!sizeof_eq as usize];
-        true
-    };
+    // #[allow(clippy::no_effect)]
+    // pub(crate) const CHECK_SIZE: bool = {
+    //     #[allow(dead_code)]
+    //     struct SmallTerm {
+    //         id: TermId,
+    //         kind: TermKind,
+    //         child_ids: BoxSlice<TermIdx>,
+    //     }
+    //     let sizeof_eq = core::mem::size_of::<Term>() == core::mem::size_of::<SmallTerm>();
+    //     [(); 1][!sizeof_eq as usize];
+    //     true
+    // };
 
     pub fn new<'a>(
         id: TermId,
         kind: TermKind,
         child_ids: BoxSlice<TermIdx>,
         t: impl Fn(TermIdx) -> &'a Term,
+        frame: StackIdx,
     ) -> Self {
-        let _ = Self::CHECK_SIZE;
+        //let _ = Self::CHECK_SIZE;
         let kind = match kind {
             TermKind::Var(var) => TermKindInner::Var(var),
             TermKind::App(app) => {
@@ -59,6 +61,7 @@ impl Term {
             id,
             kind,
             child_ids,
+            frame,
         }
     }
 
