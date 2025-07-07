@@ -1,0 +1,248 @@
+#[cfg(feature = "mem_dbg")]
+mod r#impl;
+mod utils;
+
+pub use utils::*;
+
+use core::fmt;
+use core::ops::{Deref, DerefMut};
+use std::collections::hash_map::IntoValues;
+
+macro_rules! derive_wrapper {
+    ($head:ident $(:: $tail:ident)+ $(<$($rest1:tt)*)? $(: $($rest2:tt)*)?) => {
+        derive_wrapper!( $head :: ; $($tail,)* $(<$($rest1)*)? $(: $($rest2)*)? );
+    };
+    ($($module:ident ::)+ ; $head:ident , $($tail:ident,)+ $($rest:tt)*) => {
+        derive_wrapper!( $($module ::)* $head :: ; $($tail,)* $($rest)* );
+    };
+    ($($module:ident ::)* ; $struct:ident, $(<$($t:ident$(= $default:ty)?),*>)? $(: $trait:ident $(+ $other:ident)*)?) => {
+        derive_wrapper!(
+            $(#[derive($trait$(,$other)*)])?
+            struct $struct$(<$($t$(= $default)?),*>)?($($module::)+$struct$(<$($t),*>)?);
+        );
+    };
+    (
+        $(#[derive($($d:ident),*)])?
+        struct $struct:ident$(<$($t:ident$(= $default:ty)?$(: $bound:tt)?),*>)?($p:vis $inner:ty);
+    ) => {
+        $(#[derive($($d),*)])?
+        pub struct $struct$(<$($t$(= $default)?$(: $bound)?),*>)?($p $inner);
+        impl$(<$($t$(: $bound)?),*>)? Deref for $struct$(<$($t),*>)? {
+            type Target = $inner;
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+        impl$(<$($t$(: $bound)?),*>)? DerefMut for $struct$(<$($t),*>)? {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.0
+            }
+        }
+        #[allow(clippy::non_canonical_clone_impl)]
+        impl$(<$($t$(: $bound)?),*>)? Clone for $struct$(<$($t),*>)?
+        where $inner: Clone {
+            fn clone(&self) -> Self {
+                Self(self.0.clone())
+            }
+        }
+        impl$(<$($t$(: $bound)?),*>)? fmt::Debug for $struct$(<$($t),*>)?
+        where $inner: fmt::Debug {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                self.0.fmt(f)
+            }
+        }
+        #[cfg(feature = "serde")]
+        impl$(<$($t$(: $bound)?),*>)? serde::Serialize for $struct$(<$($t),*>)?
+        where $inner: serde::Serialize {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                self.0.serialize(serializer)
+            }
+        }
+        #[cfg(feature = "serde")]
+        impl<'de, $($($t$(: $bound)?),*)?> serde::Deserialize<'de> for $struct$(<$($t),*>)?
+        where $inner: serde::Deserialize<'de> {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                <$inner as serde::Deserialize<'de>>::deserialize(deserializer).map(Self)
+            }
+        }
+        impl$(<$($t$(: $bound)?),*>)? From<$inner> for $struct$(<$($t),*>)? {
+            fn from(inner: $inner) -> Self {
+                Self(inner)
+            }
+        }
+    };
+}
+
+macro_rules! derive_non_max {
+    ($name:ident, $prim:ident) => {
+        derive_wrapper!(nonmax::$name: Copy + Eq + PartialEq + PartialOrd + Ord + Hash + Default);
+        impl $name {
+            pub const ZERO: Self = Self(nonmax::$name::ZERO);
+            pub const ONE: Self = Self(nonmax::$name::ONE);
+            pub const MAX: Self = Self(nonmax::$name::MAX);
+            pub const fn new(value: $prim) -> Option<Self> {
+                match nonmax::$name::new(value) {
+                    Some(value) => Some(Self(value)),
+                    None => None,
+                }
+            }
+            /// Creates a new non-max without checking the value.
+            ///
+            /// # Safety
+            ///
+            /// The value must not equal the maximum representable value for the
+            /// primitive type.
+            pub const unsafe fn new_unchecked(value: $prim) -> Self {
+                Self(nonmax::$name::new_unchecked(value))
+            }
+            pub const fn get(self) -> $prim {
+                self.0.get()
+            }
+        }
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                self.0.fmt(f)
+            }
+        }
+        impl core::str::FromStr for $name {
+            type Err = <nonmax::$name as core::str::FromStr>::Err;
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                nonmax::$name::from_str(s).map(Self)
+            }
+        }
+    };
+}
+
+derive_non_max!(NonMaxU32, u32);
+derive_non_max!(NonMaxUsize, usize);
+
+// BigRational
+
+derive_wrapper!(num::BigRational: PartialEq + Eq + PartialOrd + Ord + Hash);
+
+impl fmt::Display for BigRational {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+// BigUint
+
+derive_wrapper!(num::BigUint: PartialEq + Eq + PartialOrd + Ord + Hash);
+
+impl fmt::Display for BigUint {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+// TiVec
+
+derive_wrapper!(typed_index_collections::TiVec<K, V>);
+impl<K, V> Default for TiVec<K, V> {
+    fn default() -> Self {
+        Self(typed_index_collections::TiVec::default())
+    }
+}
+impl<K, V> FromIterator<V> for TiVec<K, V> {
+    fn from_iter<T: IntoIterator<Item = V>>(iter: T) -> Self {
+        Self(typed_index_collections::TiVec::from_iter(iter))
+    }
+}
+impl<K, V> std::iter::IntoIterator for TiVec<K, V> {
+    type Item = <Self::IntoIter as std::iter::IntoIterator>::Item;
+    type IntoIter = std::vec::IntoIter<V>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+impl<K: From<usize>, V> TiVec<K, V> {
+    pub fn into_iter_enumerated(self) -> impl Iterator<Item = (K, V)> {
+        self.0.into_iter_enumerated()
+    }
+}
+
+// FxHashMap
+
+derive_wrapper!(fxhash::FxHashMap<K, V>);
+impl<K, V> Default for FxHashMap<K, V> {
+    fn default() -> Self {
+        Self(fxhash::FxHashMap::default())
+    }
+}
+impl<K: Eq + std::hash::Hash, V> FromIterator<(K, V)> for FxHashMap<K, V> {
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        Self(fxhash::FxHashMap::from_iter(iter))
+    }
+}
+impl<K, V> std::iter::IntoIterator for FxHashMap<K, V> {
+    type Item = <Self::IntoIter as std::iter::IntoIterator>::Item;
+    type IntoIter = std::collections::hash_map::IntoIter<K, V>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+impl<K, V> FxHashMap<K, V> {
+    pub fn into_values(self) -> IntoValues<K, V> {
+        self.0.into_values()
+    }
+}
+
+// FxHashSet
+
+derive_wrapper!(fxhash::FxHashSet<K>);
+impl<K> Default for FxHashSet<K> {
+    fn default() -> Self {
+        Self(fxhash::FxHashSet::default())
+    }
+}
+impl<K: Eq + std::hash::Hash> FromIterator<K> for FxHashSet<K> {
+    fn from_iter<T: IntoIterator<Item = K>>(iter: T) -> Self {
+        Self(fxhash::FxHashSet::from_iter(iter))
+    }
+}
+impl<K> std::iter::IntoIterator for FxHashSet<K> {
+    type Item = <Self::IntoIter as std::iter::IntoIterator>::Item;
+    type IntoIter = std::collections::hash_set::IntoIter<K>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+// StringTable
+
+derive_wrapper!(
+    // #[derive(Default)]
+    struct StringTable(lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>);
+);
+impl StringTable {
+    pub fn with_hasher(hash_builder: fxhash::FxBuildHasher) -> Self {
+        Self(lasso::Rodeo::with_hasher(hash_builder))
+    }
+}
+
+// IString
+
+derive_wrapper!(
+    #[derive(Copy, Default, PartialEq, Eq, Hash)]
+    struct IString(pub lasso::Spur);
+);
+
+// Graph
+
+derive_wrapper!(petgraph::graph::Graph<N, E, Ty = petgraph::Directed, Ix = petgraph::graph::DefaultIx>);
+pub type DiGraph<N, E, Ix = petgraph::graph::DefaultIx> = Graph<N, E, petgraph::Directed, Ix>;
+pub type UnGraph<N, E, Ix = petgraph::graph::DefaultIx> = Graph<N, E, petgraph::Undirected, Ix>;
+impl<N, E, Ty: petgraph::EdgeType, Ix: petgraph::graph::IndexType> Graph<N, E, Ty, Ix> {
+    pub fn with_capacity(nodes: usize, edges: usize) -> Self {
+        Self(petgraph::graph::Graph::<N, E, Ty, Ix>::with_capacity(
+            nodes, edges,
+        ))
+    }
+}
