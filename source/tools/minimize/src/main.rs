@@ -1929,7 +1929,6 @@ fn run_verus(
         .arg("--rlimit")
         .arg("90")
         .arg("--crate-type=lib")
-        .arg("--no-lifetime") // https://github.com/anvil-verifier/anvil/issues/599
         .arg("--output-json")
         .arg("--time")
         .arg("--num-threads")
