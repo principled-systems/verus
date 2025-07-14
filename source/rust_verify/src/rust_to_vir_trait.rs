@@ -4,20 +4,20 @@ use crate::external::CrateItems;
 use crate::rust_to_vir_base::{
     check_generics_bounds_with_polarity, def_id_to_vir_path, process_predicate_bounds,
 };
-use crate::rust_to_vir_func::{check_item_fn, CheckItemFnEither};
+use crate::rust_to_vir_func::{CheckItemFnEither, check_item_fn};
 use crate::rust_to_vir_impl::ExternalInfo;
 use crate::unsupported_err_unless;
 use crate::util::{err_span, err_span_bare};
 use rustc_hir::{Generics, Safety, TraitFn, TraitItem, TraitItemKind, TraitItemRef};
 use rustc_middle::ty::{ClauseKind, TraitPredicate, TraitRef, TyCtxt};
-use rustc_span::def_id::DefId;
 use rustc_span::Span;
+use rustc_span::def_id::DefId;
 use std::sync::Arc;
 use vir::ast::{
-    Fun, Function, FunctionKind, GenericBound, GenericBoundX, Ident, KrateX, TraitX, TypX, VirErr,
-    Visibility,
+    Fun, Function, FunctionKind, GenericBound, GenericBoundX, Ident, KrateX, TraitId, TraitX, TypX,
+    VirErr, Visibility,
 };
-use vir::def::{trait_self_type_param, VERUS_SPEC};
+use vir::def::{VERUS_SPEC, trait_self_type_param};
 
 pub(crate) fn external_trait_specification_of<'tcx>(
     tcx: TyCtxt<'tcx>,
@@ -26,7 +26,7 @@ pub(crate) fn external_trait_specification_of<'tcx>(
 ) -> Result<Option<TraitRef<'tcx>>, VirErr> {
     let mut ex_trait_ref_for: Option<TraitRef> = None;
     for trait_item_ref in trait_items {
-        let trait_item = tcx.hir().trait_item(trait_item_ref.id);
+        let trait_item = tcx.hir_trait_item(trait_item_ref.id);
         let TraitItem { ident, kind, span, .. } = trait_item;
         match kind {
             TraitItemKind::Type(_generic_bounds, None) => {
@@ -99,7 +99,7 @@ pub(crate) fn translate_trait<'tcx>(
         // Remove the Self: Trait bound introduced by rustc
         Arc::make_mut(&mut typ_bounds).retain(|gb| {
             match &**gb {
-                GenericBoundX::Trait(bnd, tp) => {
+                GenericBoundX::Trait(TraitId::Path(bnd), tp) => {
                     if bnd == &trait_path {
                         let gp: Vec<_> = Some(trait_self_type_param())
                             .into_iter()
@@ -117,6 +117,7 @@ pub(crate) fn translate_trait<'tcx>(
                         return false;
                     }
                 }
+                GenericBoundX::Trait(TraitId::Sized, _tp) => {}
                 GenericBoundX::TypEquality(..) => {}
                 GenericBoundX::ConstTyp(..) => {}
             }
@@ -144,14 +145,14 @@ pub(crate) fn translate_trait<'tcx>(
         let mut preds2 = proxy_predicates.instantiate(tcx, ex_trait_ref_for.args).predicates;
         use crate::rust_to_vir_func::remove_ignored_trait_bounds_from_predicates;
         remove_ignored_trait_bounds_from_predicates(
-            tcx,
+            ctxt,
             true,
             &[ex_trait_ref_for.def_id],
             Some(ex_trait_ref_for.args[0]),
             &mut preds1,
         );
         remove_ignored_trait_bounds_from_predicates(
-            tcx,
+            ctxt,
             true,
             &[ex_trait_ref_for.def_id, trait_def_id],
             Some(ex_trait_ref_for.args[0]),
@@ -191,7 +192,7 @@ pub(crate) fn translate_trait<'tcx>(
     }
 
     for trait_item_ref in trait_items {
-        let trait_item = tcx.hir().trait_item(trait_item_ref.id);
+        let trait_item = tcx.hir_trait_item(trait_item_ref.id);
         let TraitItem { ident, owner_id, generics: item_generics, kind, span, defaultness: _ } =
             trait_item;
         let (item_generics_params, item_typ_bounds) = check_generics_bounds_with_polarity(
@@ -226,8 +227,12 @@ pub(crate) fn translate_trait<'tcx>(
             }
             let assoc_item = tcx.associated_item(owner_id.to_def_id());
             let ex_assoc_items = tcx.associated_items(ex_trait_id_for);
-            let ex_assoc_item =
-                ex_assoc_items.find_by_name_and_kind(tcx, *ident, assoc_item.kind, ex_trait_id_for);
+            let ex_assoc_item = ex_assoc_items.find_by_ident_and_kind(
+                tcx,
+                *ident,
+                assoc_item.as_tag(),
+                ex_trait_id_for,
+            );
             if is_verus_spec {
                 None
             } else if let Some(ex_assoc_item) = ex_assoc_item {
@@ -245,6 +250,8 @@ pub(crate) fn translate_trait<'tcx>(
 
         match kind {
             TraitItemKind::Fn(sig, fun) => {
+                // putting param_names here ensures that Vec in TraitFn::Required case below lives long enough
+                let param_names;
                 let (body_id, has_default) = match fun {
                     TraitFn::Provided(_) if ex_trait_id_for.is_some() && !is_verus_spec => {
                         return err_span(
@@ -253,11 +260,14 @@ pub(crate) fn translate_trait<'tcx>(
                         );
                     }
                     TraitFn::Provided(body_id) => (CheckItemFnEither::BodyId(body_id), true),
-                    TraitFn::Required(param_names) => {
-                        (CheckItemFnEither::ParamNames(*param_names), false)
+                    TraitFn::Required(opt_param_names) => {
+                        // REVIEW: Is filtering out `None`s the right thing to do here?
+                        param_names =
+                            opt_param_names.into_iter().flatten().cloned().collect::<Vec<_>>();
+                        (CheckItemFnEither::ParamNames(param_names.as_slice()), false)
                     }
                 };
-                let attrs = tcx.hir().attrs(trait_item.hir_id());
+                let attrs = tcx.hir_attrs(trait_item.hir_id());
                 let fun = check_item_fn(
                     ctxt,
                     &mut methods,
