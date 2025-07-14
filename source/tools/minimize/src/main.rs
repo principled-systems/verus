@@ -1892,7 +1892,7 @@ fn run_verus(
 
 
     // print stderr
-    eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
+    // eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
 
     if let Some(json_file) = json_file {
         let mut file = std::fs::File::create(json_file)
