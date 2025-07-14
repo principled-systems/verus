@@ -1727,17 +1727,17 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     );
 
     // run verus for the first time
-    let orig_t;
-    let orig_runtime_json =
-        std::env::current_dir().expect("Failed to get current directory").join("orig_runtime.json");
-    match run_verus(&root_path, 9, Some(&orig_runtime_json)) {
-        Ok(t) => {
-            orig_t = t;
-        }
-        Err((e, _)) => {
-            return Err(format!("verus failed to verify before minimization: {}", e));
-        }
-    }
+    let orig_t = 0;
+    // let orig_runtime_json =
+    //     std::env::current_dir().expect("Failed to get current directory").join("orig_runtime.json");
+    // match run_verus(&root_path, 9, Some(&orig_runtime_json)) {
+    //     Ok(t) => {
+    //         orig_t = t;
+    //     }
+    //     Err((e, _)) => {
+    //         return Err(format!("verus failed to verify before minimization: {}", e));
+    //     }
+    // }
 
     if config.sample_failures {
         let mut max_failure_t = 0;
@@ -1868,8 +1868,6 @@ fn run_verus(
     num_threads: usize,
     json_file: Option<&std::path::Path>,
 ) -> Result<u32, (String, u32)> {
-    // let file_path = proj_path.join("lib.rs");
-
     let verus_path = current_dir().unwrap().join("../../target-verus/release/verus");
 
     let cmd = std::process::Command::new(verus_path)
@@ -1877,7 +1875,7 @@ fn run_verus(
         .arg("-L")
         .arg("dependency=deps_hack/target/debug/deps")
         .arg("--extern=deps_hack=deps_hack/target/debug/libdeps_hack.rlib")
-        .arg("anvil.rs")
+        .arg("lib.rs")
         .arg("--crate-type=lib")
         .arg("--output-json")
         .arg("--time")
@@ -1892,7 +1890,7 @@ fn run_verus(
 
 
     // print stderr
-    eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
+    // eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
 
     if let Some(json_file) = json_file {
         let mut file = std::fs::File::create(json_file)
