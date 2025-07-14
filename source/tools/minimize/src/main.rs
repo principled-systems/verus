@@ -136,7 +136,7 @@ impl ToCodeKind for syn_verus::FnMode {
     fn to_code_kind(&self) -> CodeKind {
         match self {
             syn_verus::FnMode::Spec(_) | syn_verus::FnMode::SpecChecked(_) => CodeKind::Spec,
-            syn_verus::FnMode::Proof(_) => CodeKind::Proof,
+            syn_verus::FnMode::Proof(_) | syn_verus::FnMode::ProofAxiom(_) => CodeKind::Proof,
             syn_verus::FnMode::Exec(_) | syn_verus::FnMode::Default => CodeKind::Exec,
         }
     }
@@ -1728,7 +1728,9 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
 
     // run verus for the first time
     let orig_t;
-    match run_verus(&root_path, 7) {
+    let orig_runtime_json =
+        std::env::current_dir().expect("Failed to get current directory").join("orig_runtime.json");
+    match run_verus(&root_path, 9, Some(&orig_runtime_json)) {
         Ok(t) => {
             orig_t = t;
         }
@@ -1773,15 +1775,17 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
 
         let mut max_lines: Option<(&PathBuf, &Lines)> = None;
 
-        for (rel_path, lines) in sample_asserts.iter() {
+        for (i, (rel_path, lines)) in sample_asserts.iter().enumerate() {
             // comment line out
             println!("commenting out line {:?} in {:?}", lines, root_path.join(rel_path));
 
             let file_to_mutate = config.permutations_dir.join(rel_path);
             let _ = comment_lines_out(&file_to_mutate, &lines.to_owned().into());
 
-            // run verus
-            if let Err((_, t)) = run_verus(&config.permutations_dir, 7) {
+            let json = std::env::current_dir()
+                .expect("Failed to get current directory")
+                .join(format!("runtime_{}.json", i));
+            if let Err((_, t)) = run_verus(&config.permutations_dir, 7, Some(&json)) {
                 println!("verus failed with {}", t);
                 if max_failure_t < t {
                     max_lines = Some((rel_path, lines));
@@ -1800,85 +1804,7 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
 
         return Ok(());
     }
-
-    // comment out each assert and run verus
-    // if it succeeded, keep it commented out, if not, revert
-    let num_threads: usize = <std::num::NonZero<usize> as Into<usize>>::into(
-        std::thread::available_parallelism()
-            .expect("we need to know how many threads are available"),
-    ) - 1;
-
-    let mut queue =
-        std::collections::VecDeque::from_iter(file_stats.clone().into_iter().enumerate());
-    let mut running = Vec::<JoinHandle<()>>::new();
-
-    while !queue.is_empty() {
-        // allocate 4 threads to each verus process
-        if running.len() < num_threads / 4 {
-            let (file_no, (next_file, next_file_data)) =
-                queue.pop_front().expect("queue was not empty");
-            let config = config.clone();
-            let file_stats = file_stats.clone();
-            let pb = pb.clone();
-            let original_file = root_path.join(next_file.clone());
-            running.push(std::thread::spawn(move || {
-                std::fs::create_dir_all(
-                    config.permutations_dir.join(std::path::Path::new(&file_no.to_string())),
-                )
-                .expect("create directory");
-
-                for (path, file_data) in file_stats.iter() {
-                    let file_path = config
-                        .permutations_dir
-                        .join(std::path::Path::new(&file_no.to_string()))
-                        .join(path);
-                    if let Some(parent) = file_path.parent() {
-                        std::fs::create_dir_all(parent).expect("create directories");
-                    }
-                    std::fs::write(&file_path, file_data.contents.clone()).expect("write file");
-                }
-
-                let file_to_mutate = config
-                    .permutations_dir
-                    .join(std::path::Path::new(&file_no.to_string()))
-                    .join(next_file);
-                for lines in next_file_data.asserts.iter() {
-                    pb.inc(1);
-                    println!("commenting out line {:?} in {:?}", lines, file_to_mutate);
-                    let _ = comment_lines_out(&file_to_mutate, &lines.to_owned().into());
-                    if run_verus(
-                        &config.permutations_dir.join(std::path::Path::new(&file_no.to_string())),
-                        4,
-                    )
-                    .is_err()
-                    {
-                        println!("verus failed, reverting");
-                        let _ = uncomment_lines(&file_to_mutate, &lines.to_owned().into());
-                    }
-                }
-                println!("minimization of {} is completed", file_to_mutate.display());
-                // copy back to original location with _min suffix if the file content is changed
-                if std::fs::read_to_string(&file_to_mutate).expect("read file")
-                    != std::fs::read_to_string(&original_file).expect("read original file")
-                {
-                    std::fs::copy(&file_to_mutate, original_file.with_extension("min.rs"))
-                        .expect("copy file");
-                }
-            }));
-        } else {
-            // to free up the scheduler thread
-            sleep(std::time::Duration::from_millis(100));
-        }
-        running.retain(|x| !x.is_finished());
-    }
-
-    for handle in running {
-        handle.join().expect("Thread panicked");
-    }
-
-    pb.finish_with_message("Done!");
-
-    Ok(())
+    return Ok(());
 }
 
 fn comment_lines_out(file_path: &std::path::Path, lines: &Vec<usize>) -> Result<(), String> {
@@ -1937,26 +1863,14 @@ struct JsonRoot {
     times_ms: VerificationTime,
 }
 
-fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<u32, (String, u32)> {
+fn run_verus(
+    proj_path: &std::path::Path,
+    num_threads: usize,
+    json_file: Option<&std::path::Path>,
+) -> Result<u32, (String, u32)> {
     // let file_path = proj_path.join("lib.rs");
 
     let verus_path = current_dir().unwrap().join("../../target-verus/release/verus");
-
-    // let cmd = std::process::Command::new(verus_path)
-    //     .arg("--crate-type=dylib")
-    //     .arg("--output-json")
-    //     .arg("--time")
-    //     .arg(file_path)
-    //     .arg("--rlimit")
-    //     .arg("20")
-    //     .arg("--num-threads")
-    //     .arg(num_threads.to_string())
-    //     .stdout(std::process::Stdio::piped())
-    //     .output()
-    //     .map_err(|e| (format!("failed to run verus: {}", e), 0))?;
-
-    // anvil command:
-    // verus -L dependency=deps_hack/target/debug/deps --extern=deps_hack="deps_hack/target/debug/libdeps_hack.rlib" anvil.rs --crate-type=lib --time
 
     let cmd = std::process::Command::new(verus_path)
         .current_dir(proj_path)
@@ -1967,6 +1881,7 @@ fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<u32, (St
         .arg("--crate-type=lib")
         .arg("--output-json")
         .arg("--time")
+        .arg("--time-expanded")
         .arg("--num-threads")
         .arg(num_threads.to_string())
         .arg("--rlimit")
@@ -1975,8 +1890,16 @@ fn run_verus(proj_path: &std::path::Path, num_threads: usize) -> Result<u32, (St
         .output()
         .map_err(|e| (format!("failed to run verus: {}", e), 0))?;
 
+
     // print stderr
     eprintln!("{}", String::from_utf8_lossy(&cmd.stderr));
+
+    if let Some(json_file) = json_file {
+        let mut file = std::fs::File::create(json_file)
+            .map_err(|e| (format!("failed to create json file: {}", e), 0))?;
+        file.write_all(&cmd.stdout)
+            .map_err(|e| (format!("failed to write to json file: {}", e), 0))?;
+    }
 
     let output: JsonRoot = serde_json::from_slice(&cmd.stdout)
         .map_err(|e| (format!("failed to parse verus output: {}", e), 0))?;
