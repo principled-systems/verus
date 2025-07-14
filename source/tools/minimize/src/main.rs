@@ -1948,8 +1948,7 @@ fn run_verus(
         .arg(file_path)
         .arg("--rlimit")
         .arg("1000")
-        .arg("--num-threads")
-        .arg(num_threads.to_string())
+        .arg("--num-threads=9")
         .stdout(std::process::Stdio::piped())
         .output()
         .map_err(|e| (format!("failed to run verus: {}", e), 0))?;
