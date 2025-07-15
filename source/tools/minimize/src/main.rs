@@ -1727,7 +1727,7 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
     );
 
     // run verus for the first time
-    let orig_t = 0;
+    let orig_t;
     let orig_runtime_json =
         std::env::current_dir().expect("Failed to get current directory").join("orig_runtime.json");
     match run_verus(&root_path, 9, Some(&orig_runtime_json)) {
