@@ -1728,16 +1728,16 @@ fn run(config: Config, deps_path: &std::path::Path) -> Result<(), String> {
 
     // run verus for the first time
     let orig_t = 0;
-    // let orig_runtime_json =
-    //     std::env::current_dir().expect("Failed to get current directory").join("orig_runtime.json");
-    // match run_verus(&root_path, 9, Some(&orig_runtime_json)) {
-    //     Ok(t) => {
-    //         orig_t = t;
-    //     }
-    //     Err((e, _)) => {
-    //         return Err(format!("verus failed to verify before minimization: {}", e));
-    //     }
-    // }
+    let orig_runtime_json =
+        std::env::current_dir().expect("Failed to get current directory").join("orig_runtime.json");
+    match run_verus(&root_path, 9, Some(&orig_runtime_json)) {
+        Ok(t) => {
+            orig_t = t;
+        }
+        Err((e, _)) => {
+            return Err(format!("verus failed to verify before minimization: {}", e));
+        }
+    }
 
     if config.sample_failures {
         let mut max_failure_t = 0;
